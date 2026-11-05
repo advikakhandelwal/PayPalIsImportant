@@ -12,6 +12,8 @@ from app.schemas.ai_schemas import (
     DisputeMediationRequest,
     DisputeMediationResult,
     ProviderHealthResponse,
+    TalentMatchRequest,
+    TalentMatchResponse,
 )
 from app.services.ai_service import ai_service
 
@@ -145,3 +147,17 @@ def mediate_dispute(request: DisputeMediationRequest):
         return ai_service.mediate_dispute(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Mediation failed: {str(e)}")
+
+
+@router.post("/match-talent", response_model=TalentMatchResponse)
+def match_talent(request: TalentMatchRequest):
+    """
+    AI Talent Matchmaker:
+    Analyzes company job or influencer campaign brief, identifying required technical
+    skills or niches, and ranks registered talent based on verified track records
+    (on-time rate, security grade, audience authenticity, badges).
+    """
+    try:
+        return ai_service.match_talent(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Talent matching failed: {str(e)}")

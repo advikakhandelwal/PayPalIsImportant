@@ -172,3 +172,44 @@ class DisputeMediationResult(BaseModel):
     is_split_settlement: bool = Field(..., description="True if settlement is a partial split between both parties")
     ai_provider_used: str = Field(default="Google Gemini", description="AI provider that mediated the dispute")
     ai_model_used: str = Field(default="gemini-2.5-flash", description="Model version used")
+
+
+# -------------------------------------------------------------
+# 5. AI Talent Matchmaker Schemas
+# -------------------------------------------------------------
+class TalentProfile(BaseModel):
+    talent_id: str = Field(..., description="Unique talent identifier")
+    name: str = Field(..., description="Full name or creator name")
+    handle: str = Field(..., description="@username or GitHub handle")
+    category: str = Field(..., description="'developer', 'influencer', 'designer', 'writer'")
+    skills_or_niche: List[str] = Field(..., description="Key technical skills, platforms, or content niches")
+    hourly_or_campaign_rate: float = Field(..., description="Typical rate in USD")
+    spec_compliance_rate: float = Field(..., ge=0, le=100, description="Historical compliance rate percentage")
+    ontime_delivery_rate: float = Field(..., ge=0, le=100, description="Historical on-time delivery rate percentage")
+    security_grade: str = Field(..., description="'Grade A', 'Grade B', 'Grade C'")
+    audience_authenticity_score: Optional[float] = Field(default=None, description="Real follower percentage for creators")
+    verified_badges: List[str] = Field(default_factory=list, description="Trust badges earned on platform")
+    bio_or_summary: str = Field(..., description="Short professional bio")
+
+class TalentMatchRequest(BaseModel):
+    project_prompt: str = Field(..., description="Company job/campaign brief to match candidates against")
+    category: Optional[str] = Field(default="software", description="'software' or 'influencer'")
+    budget: Optional[float] = Field(default=None, description="Target budget in USD")
+    candidate_pool: Optional[List[TalentProfile]] = Field(default=None, description="Optional custom candidate list")
+    top_k: int = Field(default=3, description="Number of top candidates to recommend")
+    provider: Optional[str] = Field(default="auto", description="AI engine: 'auto', 'gemini', 'grok'")
+
+class TalentMatchResultItem(BaseModel):
+    talent_profile: TalentProfile
+    match_score: int = Field(..., ge=0, le=100, description="Relevance and trustworthiness match percentage")
+    fit_reason: str = Field(..., description="Why this candidate is an optimal fit for the project")
+    key_strengths: List[str] = Field(..., description="Key technical or demographic alignment points")
+    risk_assessment: str = Field(..., description="Risk profile based on on-time rate and security grade")
+    recommended_action: str = Field(default="INVITE_TO_CONTRACT")
+
+class TalentMatchResponse(BaseModel):
+    project_summary: str
+    required_skills_detected: List[str]
+    top_matches: List[TalentMatchResultItem]
+    ai_provider_used: str = Field(default="Google Gemini")
+    ai_model_used: str = Field(default="gemini-2.5-flash")

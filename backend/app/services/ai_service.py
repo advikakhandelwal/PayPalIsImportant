@@ -18,6 +18,10 @@ from app.schemas.ai_schemas import (
     DisputeMediationResult,
     RemediationAction,
     ProviderStatus,
+    TalentProfile,
+    TalentMatchRequest,
+    TalentMatchResultItem,
+    TalentMatchResponse,
 )
 from app.services.providers.model_router import ModelRouter
 
@@ -678,6 +682,254 @@ class TrustPayAIService:
             ai_provider_used=provider_name,
             ai_model_used=model_name,
         )
+
+    # -----------------------------------------------------------------------
+    # 5. AI Talent Matchmaker
+    # -----------------------------------------------------------------------
+    def match_talent(self, request: TalentMatchRequest) -> TalentMatchResponse:
+        """
+        Evaluates project brief against candidate talent profiles (verified on-time rates,
+        security grades, skills overlap, and audience authenticity) to recommend the
+        top K best-fit talent.
+        """
+        provider, provider_name, model_name = self.router.select_provider(
+            requested_provider=request.provider,
+            task_type="general",
+        )
+
+        candidates = request.candidate_pool or DEFAULT_TALENT_POOL
+        if request.category:
+            filtered = [c for c in candidates if c.category.lower() == request.category.lower()]
+            if filtered:
+                candidates = filtered
+
+        system_instruction = (
+            "You are TrustPay AI's senior talent matchmaker and reputation auditor. "
+            "Given a project brief and a list of talent profiles with verified stats (spec compliance rate, "
+            "on-time delivery rate, security grade, badges), select and rank the top candidates. "
+            "Calculate an accurate match_score (0-100), detailed fit_reason, key_strengths, and risk_assessment. "
+            "Output must be valid JSON."
+        )
+
+        candidates_data = [c.model_dump() for c in candidates]
+        user_prompt = (
+            f"Project Brief: {request.project_prompt}\n"
+            f"Target Category: {request.category or 'Any'}\n"
+            f"Target Budget: ${request.budget or 'Flexible'}\n"
+            f"Top K: {request.top_k}\n\n"
+            f"Available Verified Candidates:\n{json.dumps(candidates_data, indent=2)}\n\n"
+            "Return JSON matching:\n"
+            "{\n"
+            '  "project_summary": "Summary of requirements...",\n'
+            '  "required_skills_detected": ["Skill 1", "Skill 2"],\n'
+            '  "matches": [\n'
+            "    {\n"
+            '      "talent_id": "id",\n'
+            '      "match_score": 96,\n'
+            '      "fit_reason": "Clear explanation of fit...",\n'
+            '      "key_strengths": ["Strength 1", "Strength 2"],\n'
+            '      "risk_assessment": "Low Risk: Grade A security with 99% on-time record."\n'
+            "    }\n"
+            "  ]\n"
+            "}"
+        )
+
+        ai_data = None
+        if provider:
+            ai_data = provider.generate_json(user_prompt, system_instruction)
+
+        candidate_map = {c.talent_id: c for c in candidates}
+        matched_items: List[TalentMatchResultItem] = []
+
+        if ai_data and "matches" in ai_data:
+            try:
+                for m in ai_data.get("matches", []):
+                    tid = m.get("talent_id")
+                    if tid in candidate_map:
+                        matched_items.append(
+                            TalentMatchResultItem(
+                                talent_profile=candidate_map[tid],
+                                match_score=int(m.get("match_score", 90)),
+                                fit_reason=m.get("fit_reason", "High skill alignment and stellar reliability."),
+                                key_strengths=m.get("key_strengths", candidate_map[tid].skills_or_niche[:3]),
+                                risk_assessment=m.get("risk_assessment", f"Verified {candidate_map[tid].security_grade}"),
+                            )
+                        )
+                if matched_items:
+                    return TalentMatchResponse(
+                        project_summary=ai_data.get("project_summary", request.project_prompt[:150]),
+                        required_skills_detected=ai_data.get("required_skills_detected", ["Technical Delivery"]),
+                        top_matches=matched_items[: request.top_k],
+                        ai_provider_used=provider_name,
+                        ai_model_used=model_name,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to parse AI talent match results: {e}. Falling back to deterministic matching.")
+
+        return self._fallback_match_talent(request, candidates, provider_name, model_name)
+
+    def _fallback_match_talent(
+        self,
+        request: TalentMatchRequest,
+        candidates: List[TalentProfile],
+        provider_name: str,
+        model_name: str,
+    ) -> TalentMatchResponse:
+        """Deterministic heuristic talent matching for offline/sandbox operation."""
+        prompt_lower = request.project_prompt.lower()
+        scored: List[Tuple[int, TalentProfile, List[str]]] = []
+
+        for c in candidates:
+            score = 50  # Base score
+            matched_skills = []
+
+            for s in c.skills_or_niche:
+                if s.lower() in prompt_lower:
+                    score += 15
+                    matched_skills.append(s)
+
+            # Quality bonuses
+            if c.security_grade == "Grade A":
+                score += 10
+            elif c.security_grade == "Grade B":
+                score += 5
+
+            if c.ontime_delivery_rate >= 95.0:
+                score += 10
+            if c.spec_compliance_rate >= 95.0:
+                score += 10
+
+            if not matched_skills:
+                matched_skills = c.skills_or_niche[:2]
+
+            final_score = min(99, max(60, score))
+            scored.append((final_score, c, matched_skills))
+
+        # Sort descending by match score
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        matched_items = []
+        for match_score, profile, key_skills in scored[: request.top_k]:
+            matched_items.append(
+                TalentMatchResultItem(
+                    talent_profile=profile,
+                    match_score=match_score,
+                    fit_reason=f"Strong domain overlap in {', '.join(key_skills)} with {profile.ontime_delivery_rate}% historical on-time execution.",
+                    key_strengths=key_skills + profile.verified_badges[:1],
+                    risk_assessment=f"Low Risk: Verified {profile.security_grade} track record ({profile.spec_compliance_rate}% compliance rate).",
+                )
+            )
+
+        detected_skills = list({skill for _, _, skills in scored for skill in skills})[:5]
+
+        return TalentMatchResponse(
+            project_summary=f"Marketplace matching for: {request.project_prompt[:120]}...",
+            required_skills_detected=detected_skills or ["Full-Stack Engineering", "Milestone Execution"],
+            top_matches=matched_items,
+            ai_provider_used=provider_name,
+            ai_model_used=model_name,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Default Talent Profiles for Instant Marketplace Simulation
+# ---------------------------------------------------------------------------
+DEFAULT_TALENT_POOL = [
+    TalentProfile(
+        talent_id="dev_1",
+        name="Devansh Sharma",
+        handle="@devansh_codes",
+        category="developer",
+        skills_or_niche=["Python", "FastAPI", "PayPal REST API", "SQLAlchemy", "Security Hardening", "Backend"],
+        hourly_or_campaign_rate=65.0,
+        spec_compliance_rate=98.5,
+        ontime_delivery_rate=99.0,
+        security_grade="Grade A",
+        verified_badges=["Escrow Specialist", "Clean Code Certified", "Top 1% PayPal"],
+        bio_or_summary="Senior backend architect specializing in fintech, PayPal escrow authorizations, and secure multi-tier APIs.",
+    ),
+    TalentProfile(
+        talent_id="dev_2",
+        name="Alex Rivera",
+        handle="@arivera_ui",
+        category="developer",
+        skills_or_niche=["Next.js", "React", "Tailwind CSS", "TypeScript", "AG Grid", "Frontend"],
+        hourly_or_campaign_rate=55.0,
+        spec_compliance_rate=96.0,
+        ontime_delivery_rate=95.0,
+        security_grade="Grade A",
+        verified_badges=["Top 5% Timeliness", "UI/UX Master"],
+        bio_or_summary="Frontend engineer crafting fluid milestone dashboards, escrow visualizers, and responsive web applications.",
+    ),
+    TalentProfile(
+        talent_id="dev_3",
+        name="Jordan Lee",
+        handle="@jordan_sec",
+        category="developer",
+        skills_or_niche=["Python", "Go", "Docker", "Cryptography", "OAuth2", "Security Auditing"],
+        hourly_or_campaign_rate=80.0,
+        spec_compliance_rate=94.0,
+        ontime_delivery_rate=92.0,
+        security_grade="Grade A",
+        verified_badges=["Zero Leak Record", "Security Auditor"],
+        bio_or_summary="Application security engineer specializing in vulnerability mitigation, credential protection, and sandbox isolation.",
+    ),
+    TalentProfile(
+        talent_id="dev_4",
+        name="Priya Patel",
+        handle="@priyacodes",
+        category="developer",
+        skills_or_niche=["Node.js", "Express", "PostgreSQL", "React", "Stripe", "Full-Stack"],
+        hourly_or_campaign_rate=50.0,
+        spec_compliance_rate=91.0,
+        ontime_delivery_rate=93.0,
+        security_grade="Grade B",
+        verified_badges=["Verified Developer"],
+        bio_or_summary="Full-stack web developer building scalable database-driven apps and marketplace backends.",
+    ),
+    TalentProfile(
+        talent_id="inf_1",
+        name="Maya Chen",
+        handle="@mayatech",
+        category="influencer",
+        skills_or_niche=["Tech Reviews", "Instagram Reels", "TikTok", "YouTube Shorts", "Developer Tools"],
+        hourly_or_campaign_rate=350.0,
+        spec_compliance_rate=99.0,
+        ontime_delivery_rate=98.0,
+        security_grade="Grade A",
+        audience_authenticity_score=96.5,
+        verified_badges=["Verified Creator", "FTC Compliance Pro", "Top Engagement"],
+        bio_or_summary="Tech and developer tools reviewer with 250k engaged organic followers and 0% bot anomalies.",
+    ),
+    TalentProfile(
+        talent_id="inf_2",
+        name="Marcus Vance",
+        handle="@marcusfintech",
+        category="influencer",
+        skills_or_niche=["Fintech & Crypto", "X / Twitter Threads", "Podcast", "YouTube Long-form"],
+        hourly_or_campaign_rate=500.0,
+        spec_compliance_rate=95.0,
+        ontime_delivery_rate=96.0,
+        security_grade="Grade A",
+        audience_authenticity_score=94.0,
+        verified_badges=["Fintech Thought Leader", "High Conversion"],
+        bio_or_summary="Fintech analyst covering modern payment gateways, autonomous escrow, and startup launches.",
+    ),
+    TalentProfile(
+        talent_id="inf_3",
+        name="Sophia Kim",
+        handle="@sophiasaas",
+        category="influencer",
+        skills_or_niche=["Design & SaaS", "Short-Form Video", "TikTok", "Product Demos"],
+        hourly_or_campaign_rate=250.0,
+        spec_compliance_rate=93.0,
+        ontime_delivery_rate=97.0,
+        security_grade="Grade B",
+        audience_authenticity_score=92.0,
+        verified_badges=["Rising Star"],
+        bio_or_summary="Product reviewer focusing on SaaS launches, AI developer tools, and workflow automation.",
+    ),
+]
 
 
 # Singleton instance for imports

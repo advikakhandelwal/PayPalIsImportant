@@ -12,6 +12,7 @@ from app.schemas.ai_schemas import (
     CodeInspectionRequest,
     InfluencerInspectionRequest,
     DisputeMediationRequest,
+    TalentMatchRequest,
 )
 
 
@@ -187,6 +188,58 @@ def test_dispute_mediator_with_grok_routing():
     print(">>> AI Dispute Mediator Passed! [OK]")
 
 
+def test_talent_matchmaker_software():
+    print("\n--- 5A. Testing AI Talent Matchmaker (Software Developer Gig) ---")
+    service = TrustPayAIService()
+    req = TalentMatchRequest(
+        project_prompt="Looking for an experienced Python and FastAPI backend developer to build PayPal escrow payment milestones and secure REST APIs.",
+        category="developer",
+        budget=1200.0,
+        top_k=3,
+    )
+    result = service.match_talent(req)
+    print(f"Project: {result.project_summary}")
+    print(f"Required Skills Detected: {result.required_skills_detected}")
+    print(f"Top Matches Found: {len(result.top_matches)}")
+    for i, m in enumerate(result.top_matches, start=1):
+        p = m.talent_profile
+        print(f"  #{i} [{m.match_score}% Match] {p.name} ({p.handle}) - Rate: ${p.hourly_or_campaign_rate}/hr")
+        print(f"     Strengths: {', '.join(m.key_strengths)}")
+        print(f"     Risk Assessment: {m.risk_assessment}")
+        print(f"     Reason: {m.fit_reason}")
+
+    assert len(result.top_matches) > 0
+    assert result.top_matches[0].match_score >= 80
+    assert result.top_matches[0].talent_profile.category == "developer"
+    print(">>> Software Talent Matchmaker Passed! [OK]")
+
+
+def test_talent_matchmaker_influencer():
+    print("\n--- 5B. Testing AI Talent Matchmaker (Creator / Influencer Campaign) ---")
+    service = TrustPayAIService()
+    req = TalentMatchRequest(
+        project_prompt="Need a top tech influencer to produce a 60-second TikTok review and Instagram reel demoing our AI developer tool with FTC #ad disclosure.",
+        category="influencer",
+        budget=500.0,
+        top_k=2,
+    )
+    result = service.match_talent(req)
+    print(f"Project: {result.project_summary}")
+    print(f"Top Creator Matches: {len(result.top_matches)}")
+    for i, m in enumerate(result.top_matches, start=1):
+        p = m.talent_profile
+        print(f"  #{i} [{m.match_score}% Match] {p.name} ({p.handle})")
+        print(f"     Audience Authenticity: {p.audience_authenticity_score}%")
+        print(f"     Fit Reason: {m.fit_reason}")
+
+    assert len(result.top_matches) > 0
+    top_creator = result.top_matches[0].talent_profile
+    assert top_creator.category == "influencer"
+    assert top_creator.audience_authenticity_score is not None
+    assert top_creator.audience_authenticity_score >= 90.0
+    print(">>> Influencer Talent Matchmaker Passed! [OK]")
+
+
 if __name__ == "__main__":
     test_provider_health()
     test_milestone_decomposition()
@@ -194,6 +247,8 @@ if __name__ == "__main__":
     test_code_vulnerable_inspection()
     test_influencer_verification()
     test_dispute_mediator_with_grok_routing()
+    test_talent_matchmaker_software()
+    test_talent_matchmaker_influencer()
     print("\n==========================================")
-    print("ALL 5 TRUSTPAY AI TEST SUITES PASSED! [OK]")
+    print("ALL 7 TRUSTPAY AI TEST SUITES PASSED! [OK]")
     print("==========================================")
