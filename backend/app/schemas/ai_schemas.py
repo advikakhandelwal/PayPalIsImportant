@@ -2,6 +2,28 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 # -------------------------------------------------------------
+# 0. Provider Health & Multi-Model Schemas
+# -------------------------------------------------------------
+class ProviderStatus(BaseModel):
+    name: str = Field(..., description="Provider name ('Google Gemini', 'Ollama (Local)', 'xAI Grok')")
+    key: str = Field(..., description="'gemini', 'ollama', 'grok'")
+    is_available: bool = Field(..., description="Whether this provider is currently reachable")
+    model: str = Field(..., description="Configured model name")
+    role: str = Field(..., description="Primary strength (e.g. 'Multimodal Vision/Audio', 'Local Privacy Code Audit', 'Dispute Arbitration')")
+    privacy_compliant: bool = Field(..., description="True if runs on-premise without cloud data transfer")
+    details: Optional[str] = None
+
+class ProviderHealthResponse(BaseModel):
+    active_providers: List[ProviderStatus]
+    recommended_routing: Dict[str, str] = {
+        "code_security_nda": "ollama (100% on-prem privacy)",
+        "influencer_multimodal": "gemini (native video/audio parsing)",
+        "dispute_arbitration": "grok (fast unbiased reasoning)",
+        "default": "gemini (gemini-2.5-flash)",
+    }
+
+
+# -------------------------------------------------------------
 # 1. Milestone Spec Decomposer Schemas
 # -------------------------------------------------------------
 class MilestoneStep(BaseModel):
@@ -27,6 +49,10 @@ class MilestoneDecomposeRequest(BaseModel):
         default=3,
         description="Target number of sequential milestones (recommended 2-4)"
     )
+    provider: Optional[str] = Field(
+        default="auto",
+        description="AI engine to route to: 'auto', 'gemini', 'ollama', 'grok'"
+    )
 
 class MilestoneDecomposeResponse(BaseModel):
     project_title: str
@@ -35,6 +61,8 @@ class MilestoneDecomposeResponse(BaseModel):
     category: str
     steps: List[MilestoneStep]
     anti_ghosting_policy: str = "Autonomous escrow release triggered after 72 hours of company inactivity on verified deliverables."
+    ai_provider_used: str = Field(default="Google Gemini", description="AI provider that processed this request")
+    ai_model_used: str = Field(default="gemini-2.5-flash", description="Model version used")
 
 
 # -------------------------------------------------------------
@@ -52,6 +80,14 @@ class CodeInspectionRequest(BaseModel):
     milestone_spec: str = Field(..., description="The agreed verification criteria for this milestone")
     repo_url: Optional[str] = Field(default=None, description="Optional GitHub repo URL")
     file_name: Optional[str] = Field(default="deliverable.py", description="Main file name / context")
+    privacy_mode: Optional[bool] = Field(
+        default=False,
+        description="If True, routes exclusively to local Ollama on-prem to protect proprietary code under NDA."
+    )
+    provider: Optional[str] = Field(
+        default="auto",
+        description="AI engine: 'auto', 'gemini', 'ollama', 'grok'"
+    )
 
 class CodeInspectionResult(BaseModel):
     score: int = Field(..., ge=0, le=100, description="Overall compliance score from 0 to 100")
@@ -65,6 +101,9 @@ class CodeInspectionResult(BaseModel):
         ...,
         description="'FULL_RELEASE', 'PARTIAL_RELEASE', or 'REJECT_REMEDIATION_REQUIRED'"
     )
+    ai_provider_used: str = Field(default="Google Gemini", description="AI provider that performed the audit")
+    ai_model_used: str = Field(default="gemini-2.5-flash", description="Model version used")
+    privacy_mode_active: bool = Field(default=False, description="True if executed on-premise without external cloud APIs")
 
 
 # -------------------------------------------------------------
@@ -77,6 +116,10 @@ class InfluencerInspectionRequest(BaseModel):
     required_coupon: Optional[str] = Field(default=None, description="Required promotional discount code (e.g. 'SAVE30')")
     brand_name: str = Field(default="Brand", description="Name of sponsoring brand/product")
     audio_transcript: Optional[str] = Field(default=None, description="Optional pre-extracted transcript of speech in video/audio")
+    provider: Optional[str] = Field(
+        default="auto",
+        description="AI engine: 'auto' or 'gemini' (multimodal requires Gemini)"
+    )
 
 class InfluencerInspectionResult(BaseModel):
     score: int = Field(..., ge=0, le=100, description="Overall campaign fulfillment score from 0 to 100")
@@ -93,6 +136,8 @@ class InfluencerInspectionResult(BaseModel):
         ...,
         description="'FULL_RELEASE', 'PARTIAL_RELEASE', or 'REJECT_REMEDIATION_REQUIRED'"
     )
+    ai_provider_used: str = Field(default="Google Gemini (Multimodal)", description="AI provider used")
+    ai_model_used: str = Field(default="gemini-2.5-flash", description="Model version used")
 
 
 # -------------------------------------------------------------
@@ -104,6 +149,10 @@ class DisputeMediationRequest(BaseModel):
     company_complaint: str = Field(..., description="Why the company contested the payout")
     freelancer_statement: str = Field(..., description="Freelancer's counter-argument and delivery proof")
     step_amount: float = Field(..., description="Dollar amount locked in escrow for this contested step")
+    provider: Optional[str] = Field(
+        default="auto",
+        description="AI engine: 'auto', 'grok', 'gemini', 'ollama'"
+    )
 
 class RemediationAction(BaseModel):
     task: str
@@ -121,3 +170,5 @@ class DisputeMediationResult(BaseModel):
         description="Action items for talent to complete within 48h to claim remaining disputed funds"
     )
     is_split_settlement: bool = Field(..., description="True if settlement is a partial split between both parties")
+    ai_provider_used: str = Field(default="Google Gemini", description="AI provider that mediated the dispute")
+    ai_model_used: str = Field(default="gemini-2.5-flash", description="Model version used")

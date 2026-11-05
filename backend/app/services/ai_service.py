@@ -5,9 +5,6 @@ import logging
 from typing import List, Optional, Dict, Any, Tuple
 from dotenv import load_dotenv
 
-from google import genai
-from google.genai import types
-
 from app.schemas.ai_schemas import (
     MilestoneStep,
     MilestoneDecomposeRequest,
@@ -20,7 +17,9 @@ from app.schemas.ai_schemas import (
     DisputeMediationRequest,
     DisputeMediationResult,
     RemediationAction,
+    ProviderStatus,
 )
+from app.services.providers.model_router import ModelRouter
 
 load_dotenv()
 logger = logging.getLogger("trustpay.ai_service")
@@ -83,49 +82,19 @@ SECURITY_PATTERNS = [
 
 class TrustPayAIService:
     """
-    Core AI Verifier & Security Engine for TrustPay AI.
-    Powered by Google Gemini (google-genai Python SDK).
+    Multi-Model AI Verifier & Security Engine for TrustPay AI.
+    Intelligently routes tasks across:
+    - Google Gemini (Multimodal Vision & Audio, Spec Decomposition)
+    - Ollama (Local On-Premises Privacy Mode for Enterprise Code)
+    - xAI Grok (Unbiased Real-time Dispute Arbitration)
     """
 
-    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        self.client: Optional[genai.Client] = None
+    def __init__(self):
+        self.router = ModelRouter()
+        self.model_name = self.router.gemini.default_model
 
-        if self.api_key:
-            try:
-                self.client = genai.Client(api_key=self.api_key)
-                logger.info(f"Initialized Gemini Client with model '{self.model_name}'")
-            except Exception as e:
-                logger.warning(f"Failed to initialize Gemini Client: {e}. Falling back to sandbox mode.")
-        else:
-            logger.info("No GEMINI_API_KEY found. AI Service operating in deterministic sandbox simulation mode.")
-
-    # -----------------------------------------------------------------------
-    # Helper: Safe Gemini JSON Prompting
-    # -----------------------------------------------------------------------
-    def _call_gemini_json(self, contents: Any, system_instruction: str) -> Optional[Dict[str, Any]]:
-        """Invokes Gemini model expecting a JSON response."""
-        if not self.client:
-            return None
-
-        try:
-            config = types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                response_mime_type="application/json",
-                temperature=0.2,
-            )
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=contents,
-                config=config,
-            )
-            if response and response.text:
-                return json.loads(response.text)
-        except Exception as e:
-            logger.error(f"Gemini API invocation error: {e}")
-            return None
-        return None
+    def get_providers_status(self) -> List[ProviderStatus]:
+        return self.router.get_all_statuses()
 
     # -----------------------------------------------------------------------
     # 1. Milestone Spec Decomposer
@@ -135,6 +104,11 @@ class TrustPayAIService:
         Decomposes a raw job or campaign prompt into structured sequential milestones
         with weighted percentages summing to 100% and concrete verification criteria.
         """
+        provider, provider_name, model_name = self.router.select_provider(
+            requested_provider=request.provider,
+            task_type="spec",
+        )
+
         system_instruction = (
             "You are an expert technical project architect and milestone contract decomposer for TrustPay AI. "
             "Given a project brief, budget, and category, decompose it into sequential, verifiable milestone steps. "
@@ -170,7 +144,9 @@ class TrustPayAIService:
             "}"
         )
 
-        result_json = self._call_gemini_json(user_prompt, system_instruction)
+        result_json = None
+        if provider:
+            result_json = provider.generate_json(user_prompt, system_instruction)
 
         if result_json and "steps" in result_json:
             try:
@@ -205,12 +181,17 @@ class TrustPayAIService:
                     total_budget=request.total_budget,
                     category=request.category or "software",
                     steps=steps,
+                    ai_provider_used=provider_name,
+                    ai_model_used=model_name,
                 )
             except Exception as parse_err:
-                logger.warning(f"Error parsing Gemini response: {parse_err}. Using deterministic decomposition.")
+                logger.warning(f"Error parsing AI response: {parse_err}. Using deterministic decomposition.")
 
-        # Deterministic fallback (if Gemini API key is missing or offline)
-        return self._fallback_decompose(request)
+        # Deterministic fallback
+        res = self._fallback_decompose(request)
+        res.ai_provider_used = provider_name
+        res.ai_model_used = model_name
+        return res
 
     def _fallback_decompose(self, request: MilestoneDecomposeRequest) -> MilestoneDecomposeResponse:
         """Deterministic, intelligent decomposition for sandbox testing."""
@@ -321,7 +302,14 @@ class TrustPayAIService:
         """
         Inspects submitted code against milestone acceptance criteria and runs
         heuristic & AI-assisted vulnerability and secret leak scans.
+        Supports Privacy Mode (routes to local Ollama on-prem).
         """
+        provider, provider_name, model_name = self.router.select_provider(
+            requested_provider=request.provider,
+            task_type="code",
+            privacy_mode=bool(request.privacy_mode),
+        )
+
         # Step A: Run static regex security scanner
         findings: List[SecurityFinding] = []
         for pat in SECURITY_PATTERNS:
@@ -354,7 +342,7 @@ class TrustPayAIService:
         else:
             security_grade = "Grade A"
 
-        # Step C: AI verification of criteria compliance using Gemini
+        # Step C: AI verification of criteria compliance
         system_instruction = (
             "You are TrustPay AI's senior code compliance auditor and security inspector. "
             "You evaluate developer submissions against agreed milestone criteria. "
@@ -377,15 +365,16 @@ class TrustPayAIService:
             "}"
         )
 
-        gemini_data = self._call_gemini_json(user_prompt, system_instruction)
+        ai_data = None
+        if provider:
+            ai_data = provider.generate_json(user_prompt, system_instruction)
 
-        if gemini_data:
-            base_score = int(gemini_data.get("compliance_score", 85))
-            passed = gemini_data.get("passed_checks", [])
-            failed = gemini_data.get("failed_checks", [])
-            feedback = gemini_data.get("feedback", "Automated code inspection completed.")
+        if ai_data:
+            base_score = int(ai_data.get("compliance_score", 85))
+            passed = ai_data.get("passed_checks", [])
+            failed = ai_data.get("failed_checks", [])
+            feedback = ai_data.get("feedback", "Automated code inspection completed.")
         else:
-            # Deterministic heuristic fallback
             passed, failed, base_score, feedback = self._heuristic_code_audit(
                 request.code_content, request.milestone_spec
             )
@@ -417,6 +406,9 @@ class TrustPayAIService:
             security_findings=findings,
             feedback=feedback,
             payout_recommendation=payout_rec,
+            ai_provider_used=provider_name,
+            ai_model_used=model_name,
+            privacy_mode_active=bool(request.privacy_mode or "Ollama" in provider_name),
         )
 
     def _heuristic_code_audit(self, code: str, spec: str) -> Tuple[List[str], List[str], int, str]:
@@ -464,17 +456,20 @@ class TrustPayAIService:
         - Brand visual logo / presence
         - Audio transcript adherence for required discount code (e.g. 'ACME30') & keywords
         """
-        # Step A: Local caption disclosure checks
+        provider, provider_name, model_name = self.router.select_provider(
+            requested_provider=request.provider,
+            task_type="multimodal",
+            requires_multimodal=True,
+        )
+
         caption_lower = request.caption.lower()
         ftc_tags = ["#ad", "#sponsored", "#paidpartnership", "paid partnership", "#partner"]
         has_ftc = any(tag in caption_lower for tag in ftc_tags)
 
-        # Check for promo code in caption
         promo_in_caption = False
         if request.required_coupon:
             promo_in_caption = request.required_coupon.lower() in caption_lower
 
-        # Step B: Multimodal Gemini evaluation
         system_instruction = (
             "You are TrustPay AI's multimodal influencer campaign verifier. "
             "You inspect social media submissions (captions, images, video frames, audio transcripts). "
@@ -485,14 +480,6 @@ class TrustPayAIService:
             "4. Calculate an overall fulfillment score (0 to 100).\n"
             "Output must be valid JSON."
         )
-
-        contents: List[Any] = []
-        if media_bytes and media_mime_type:
-            try:
-                media_part = types.Part.from_bytes(data=media_bytes, mime_type=media_mime_type)
-                contents.append(media_part)
-            except Exception as e:
-                logger.warning(f"Unable to format media part: {e}")
 
         prompt_text = (
             f"Brand Name: {request.brand_name}\n"
@@ -514,9 +501,18 @@ class TrustPayAIService:
             '  "feedback": "Great delivery..."\n'
             "}"
         )
-        contents.append(prompt_text)
 
-        gemini_result = self._call_gemini_json(contents, system_instruction)
+        gemini_result = None
+        if provider:
+            if media_bytes and media_mime_type and hasattr(provider, "generate_multimodal_json"):
+                from google.genai import types
+                try:
+                    media_part = types.Part.from_bytes(data=media_bytes, mime_type=media_mime_type)
+                    gemini_result = provider.generate_multimodal_json([media_part, prompt_text], system_instruction)
+                except Exception as e:
+                    logger.warning(f"Failed to attach media part: {e}")
+            if not gemini_result:
+                gemini_result = provider.generate_json(prompt_text, system_instruction)
 
         if gemini_result:
             score = int(gemini_result.get("score", 90))
@@ -529,7 +525,6 @@ class TrustPayAIService:
             transcript = gemini_result.get("detected_transcript", request.audio_transcript)
             feedback = gemini_result.get("feedback", "Influencer deliverable evaluated successfully.")
         else:
-            # Deterministic simulation for sandbox demo
             score = 92
             ftc_compliant = has_ftc
             brand_logo = True
@@ -587,6 +582,8 @@ class TrustPayAIService:
             detected_transcript=transcript,
             feedback=feedback,
             payout_recommendation=payout_rec,
+            ai_provider_used=provider_name,
+            ai_model_used=model_name,
         )
 
     # -----------------------------------------------------------------------
@@ -597,7 +594,13 @@ class TrustPayAIService:
         Objectively mediates contested escrow milestones by assessing contract specs,
         actual deliverable proof, and respective statements to recommend an equitable
         split payout with remediation tasks.
+        Routes to Grok or Gemini.
         """
+        provider, provider_name, model_name = self.router.select_provider(
+            requested_provider=request.provider,
+            task_type="dispute",
+        )
+
         system_instruction = (
             "You are TrustPay AI's autonomous and impartial dispute arbitrator. "
             "When a milestone deliverable is contested by a company or talent, you review "
@@ -626,13 +629,15 @@ class TrustPayAIService:
             "}"
         )
 
-        gemini_data = self._call_gemini_json(user_prompt, system_instruction)
+        ai_data = None
+        if provider:
+            ai_data = provider.generate_json(user_prompt, system_instruction)
 
-        if gemini_data:
-            talent_pct = int(gemini_data.get("talent_payout_percentage", 70))
+        if ai_data:
+            talent_pct = int(ai_data.get("talent_payout_percentage", 70))
             company_pct = 100 - talent_pct
-            rationale = gemini_data.get("settlement_rationale", "Impartial dispute split based on deliverable value.")
-            punch_list_raw = gemini_data.get("punch_list", [])
+            rationale = ai_data.get("settlement_rationale", "Impartial dispute split based on deliverable value.")
+            punch_list_raw = ai_data.get("punch_list", [])
             punch_list = [
                 RemediationAction(
                     task=item.get("task", "Address requested refinement"),
@@ -642,7 +647,6 @@ class TrustPayAIService:
                 for item in punch_list_raw
             ]
         else:
-            # Deterministic split mediator fallback
             talent_pct = 75
             company_pct = 25
             rem_amount = round((company_pct / 100.0) * request.step_amount, 2)
@@ -671,8 +675,10 @@ class TrustPayAIService:
             settlement_rationale=rationale,
             punch_list=punch_list,
             is_split_settlement=talent_pct > 0 and company_pct > 0,
+            ai_provider_used=provider_name,
+            ai_model_used=model_name,
         )
 
 
-# Singleton instance for quick imports
+# Singleton instance for imports
 ai_service = TrustPayAIService()
