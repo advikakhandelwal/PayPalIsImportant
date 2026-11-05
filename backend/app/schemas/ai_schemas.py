@@ -2,6 +2,28 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 # -------------------------------------------------------------
+# 0. Provider Health & Multi-Model Schemas
+# -------------------------------------------------------------
+class ProviderStatus(BaseModel):
+    name: str = Field(..., description="Provider name ('Google Gemini', 'Ollama (Local)', 'xAI Grok')")
+    key: str = Field(..., description="'gemini', 'ollama', 'grok'")
+    is_available: bool = Field(..., description="Whether this provider is currently reachable")
+    model: str = Field(..., description="Configured model name")
+    role: str = Field(..., description="Primary strength (e.g. 'Multimodal Vision/Audio', 'Local Privacy Code Audit', 'Dispute Arbitration')")
+    privacy_compliant: bool = Field(..., description="True if runs on-premise without cloud data transfer")
+    details: Optional[str] = None
+
+class ProviderHealthResponse(BaseModel):
+    active_providers: List[ProviderStatus]
+    recommended_routing: Dict[str, str] = {
+        "code_security_nda": "ollama (100% on-prem privacy)",
+        "influencer_multimodal": "gemini (native video/audio parsing)",
+        "dispute_arbitration": "grok (fast unbiased reasoning)",
+        "default": "gemini (gemini-2.5-flash)",
+    }
+
+
+# -------------------------------------------------------------
 # 1. Milestone Spec Decomposer Schemas
 # -------------------------------------------------------------
 class MilestoneStep(BaseModel):
@@ -27,6 +49,10 @@ class MilestoneDecomposeRequest(BaseModel):
         default=3,
         description="Target number of sequential milestones (recommended 2-4)"
     )
+    provider: Optional[str] = Field(
+        default="auto",
+        description="AI engine to route to: 'auto', 'gemini', 'ollama', 'grok'"
+    )
 
 class MilestoneDecomposeResponse(BaseModel):
     project_title: str
@@ -35,6 +61,8 @@ class MilestoneDecomposeResponse(BaseModel):
     category: str
     steps: List[MilestoneStep]
     anti_ghosting_policy: str = "Autonomous escrow release triggered after 72 hours of company inactivity on verified deliverables."
+    ai_provider_used: str = Field(default="Google Gemini", description="AI provider that processed this request")
+    ai_model_used: str = Field(default="gemini-2.5-flash", description="Model version used")
 
 
 # -------------------------------------------------------------
@@ -52,6 +80,14 @@ class CodeInspectionRequest(BaseModel):
     milestone_spec: str = Field(..., description="The agreed verification criteria for this milestone")
     repo_url: Optional[str] = Field(default=None, description="Optional GitHub repo URL")
     file_name: Optional[str] = Field(default="deliverable.py", description="Main file name / context")
+    privacy_mode: Optional[bool] = Field(
+        default=False,
+        description="If True, routes exclusively to local Ollama on-prem to protect proprietary code under NDA."
+    )
+    provider: Optional[str] = Field(
+        default="auto",
+        description="AI engine: 'auto', 'gemini', 'ollama', 'grok'"
+    )
 
 class CodeInspectionResult(BaseModel):
     score: int = Field(..., ge=0, le=100, description="Overall compliance score from 0 to 100")
@@ -65,6 +101,9 @@ class CodeInspectionResult(BaseModel):
         ...,
         description="'FULL_RELEASE', 'PARTIAL_RELEASE', or 'REJECT_REMEDIATION_REQUIRED'"
     )
+    ai_provider_used: str = Field(default="Google Gemini", description="AI provider that performed the audit")
+    ai_model_used: str = Field(default="gemini-2.5-flash", description="Model version used")
+    privacy_mode_active: bool = Field(default=False, description="True if executed on-premise without external cloud APIs")
 
 
 # -------------------------------------------------------------
@@ -77,6 +116,10 @@ class InfluencerInspectionRequest(BaseModel):
     required_coupon: Optional[str] = Field(default=None, description="Required promotional discount code (e.g. 'SAVE30')")
     brand_name: str = Field(default="Brand", description="Name of sponsoring brand/product")
     audio_transcript: Optional[str] = Field(default=None, description="Optional pre-extracted transcript of speech in video/audio")
+    provider: Optional[str] = Field(
+        default="auto",
+        description="AI engine: 'auto' or 'gemini' (multimodal requires Gemini)"
+    )
 
 class InfluencerInspectionResult(BaseModel):
     score: int = Field(..., ge=0, le=100, description="Overall campaign fulfillment score from 0 to 100")
@@ -93,6 +136,8 @@ class InfluencerInspectionResult(BaseModel):
         ...,
         description="'FULL_RELEASE', 'PARTIAL_RELEASE', or 'REJECT_REMEDIATION_REQUIRED'"
     )
+    ai_provider_used: str = Field(default="Google Gemini (Multimodal)", description="AI provider used")
+    ai_model_used: str = Field(default="gemini-2.5-flash", description="Model version used")
 
 
 # -------------------------------------------------------------
@@ -104,6 +149,10 @@ class DisputeMediationRequest(BaseModel):
     company_complaint: str = Field(..., description="Why the company contested the payout")
     freelancer_statement: str = Field(..., description="Freelancer's counter-argument and delivery proof")
     step_amount: float = Field(..., description="Dollar amount locked in escrow for this contested step")
+    provider: Optional[str] = Field(
+        default="auto",
+        description="AI engine: 'auto', 'grok', 'gemini', 'ollama'"
+    )
 
 class RemediationAction(BaseModel):
     task: str
@@ -121,3 +170,46 @@ class DisputeMediationResult(BaseModel):
         description="Action items for talent to complete within 48h to claim remaining disputed funds"
     )
     is_split_settlement: bool = Field(..., description="True if settlement is a partial split between both parties")
+    ai_provider_used: str = Field(default="Google Gemini", description="AI provider that mediated the dispute")
+    ai_model_used: str = Field(default="gemini-2.5-flash", description="Model version used")
+
+
+# -------------------------------------------------------------
+# 5. AI Talent Matchmaker Schemas
+# -------------------------------------------------------------
+class TalentProfile(BaseModel):
+    talent_id: str = Field(..., description="Unique talent identifier")
+    name: str = Field(..., description="Full name or creator name")
+    handle: str = Field(..., description="@username or GitHub handle")
+    category: str = Field(..., description="'developer', 'influencer', 'designer', 'writer'")
+    skills_or_niche: List[str] = Field(..., description="Key technical skills, platforms, or content niches")
+    hourly_or_campaign_rate: float = Field(..., description="Typical rate in USD")
+    spec_compliance_rate: float = Field(..., ge=0, le=100, description="Historical compliance rate percentage")
+    ontime_delivery_rate: float = Field(..., ge=0, le=100, description="Historical on-time delivery rate percentage")
+    security_grade: str = Field(..., description="'Grade A', 'Grade B', 'Grade C'")
+    audience_authenticity_score: Optional[float] = Field(default=None, description="Real follower percentage for creators")
+    verified_badges: List[str] = Field(default_factory=list, description="Trust badges earned on platform")
+    bio_or_summary: str = Field(..., description="Short professional bio")
+
+class TalentMatchRequest(BaseModel):
+    project_prompt: str = Field(..., description="Company job/campaign brief to match candidates against")
+    category: Optional[str] = Field(default="software", description="'software' or 'influencer'")
+    budget: Optional[float] = Field(default=None, description="Target budget in USD")
+    candidate_pool: Optional[List[TalentProfile]] = Field(default=None, description="Optional custom candidate list")
+    top_k: int = Field(default=3, description="Number of top candidates to recommend")
+    provider: Optional[str] = Field(default="auto", description="AI engine: 'auto', 'gemini', 'grok'")
+
+class TalentMatchResultItem(BaseModel):
+    talent_profile: TalentProfile
+    match_score: int = Field(..., ge=0, le=100, description="Relevance and trustworthiness match percentage")
+    fit_reason: str = Field(..., description="Why this candidate is an optimal fit for the project")
+    key_strengths: List[str] = Field(..., description="Key technical or demographic alignment points")
+    risk_assessment: str = Field(..., description="Risk profile based on on-time rate and security grade")
+    recommended_action: str = Field(default="INVITE_TO_CONTRACT")
+
+class TalentMatchResponse(BaseModel):
+    project_summary: str
+    required_skills_detected: List[str]
+    top_matches: List[TalentMatchResultItem]
+    ai_provider_used: str = Field(default="Google Gemini")
+    ai_model_used: str = Field(default="gemini-2.5-flash")

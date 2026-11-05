@@ -5,9 +5,6 @@ import logging
 from typing import List, Optional, Dict, Any, Tuple
 from dotenv import load_dotenv
 
-from google import genai
-from google.genai import types
-
 from app.schemas.ai_schemas import (
     MilestoneStep,
     MilestoneDecomposeRequest,
@@ -20,7 +17,13 @@ from app.schemas.ai_schemas import (
     DisputeMediationRequest,
     DisputeMediationResult,
     RemediationAction,
+    ProviderStatus,
+    TalentProfile,
+    TalentMatchRequest,
+    TalentMatchResultItem,
+    TalentMatchResponse,
 )
+from app.services.providers.model_router import ModelRouter
 
 load_dotenv()
 logger = logging.getLogger("trustpay.ai_service")
@@ -83,49 +86,19 @@ SECURITY_PATTERNS = [
 
 class TrustPayAIService:
     """
-    Core AI Verifier & Security Engine for TrustPay AI.
-    Powered by Google Gemini (google-genai Python SDK).
+    Multi-Model AI Verifier & Security Engine for TrustPay AI.
+    Intelligently routes tasks across:
+    - Google Gemini (Multimodal Vision & Audio, Spec Decomposition)
+    - Ollama (Local On-Premises Privacy Mode for Enterprise Code)
+    - xAI Grok (Unbiased Real-time Dispute Arbitration)
     """
 
-    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        self.client: Optional[genai.Client] = None
+    def __init__(self):
+        self.router = ModelRouter()
+        self.model_name = self.router.gemini.default_model
 
-        if self.api_key:
-            try:
-                self.client = genai.Client(api_key=self.api_key)
-                logger.info(f"Initialized Gemini Client with model '{self.model_name}'")
-            except Exception as e:
-                logger.warning(f"Failed to initialize Gemini Client: {e}. Falling back to sandbox mode.")
-        else:
-            logger.info("No GEMINI_API_KEY found. AI Service operating in deterministic sandbox simulation mode.")
-
-    # -----------------------------------------------------------------------
-    # Helper: Safe Gemini JSON Prompting
-    # -----------------------------------------------------------------------
-    def _call_gemini_json(self, contents: Any, system_instruction: str) -> Optional[Dict[str, Any]]:
-        """Invokes Gemini model expecting a JSON response."""
-        if not self.client:
-            return None
-
-        try:
-            config = types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                response_mime_type="application/json",
-                temperature=0.2,
-            )
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=contents,
-                config=config,
-            )
-            if response and response.text:
-                return json.loads(response.text)
-        except Exception as e:
-            logger.error(f"Gemini API invocation error: {e}")
-            return None
-        return None
+    def get_providers_status(self) -> List[ProviderStatus]:
+        return self.router.get_all_statuses()
 
     # -----------------------------------------------------------------------
     # 1. Milestone Spec Decomposer
@@ -135,6 +108,11 @@ class TrustPayAIService:
         Decomposes a raw job or campaign prompt into structured sequential milestones
         with weighted percentages summing to 100% and concrete verification criteria.
         """
+        provider, provider_name, model_name = self.router.select_provider(
+            requested_provider=request.provider,
+            task_type="spec",
+        )
+
         system_instruction = (
             "You are an expert technical project architect and milestone contract decomposer for TrustPay AI. "
             "Given a project brief, budget, and category, decompose it into sequential, verifiable milestone steps. "
@@ -170,7 +148,9 @@ class TrustPayAIService:
             "}"
         )
 
-        result_json = self._call_gemini_json(user_prompt, system_instruction)
+        result_json = None
+        if provider:
+            result_json = provider.generate_json(user_prompt, system_instruction)
 
         if result_json and "steps" in result_json:
             try:
@@ -205,12 +185,17 @@ class TrustPayAIService:
                     total_budget=request.total_budget,
                     category=request.category or "software",
                     steps=steps,
+                    ai_provider_used=provider_name,
+                    ai_model_used=model_name,
                 )
             except Exception as parse_err:
-                logger.warning(f"Error parsing Gemini response: {parse_err}. Using deterministic decomposition.")
+                logger.warning(f"Error parsing AI response: {parse_err}. Using deterministic decomposition.")
 
-        # Deterministic fallback (if Gemini API key is missing or offline)
-        return self._fallback_decompose(request)
+        # Deterministic fallback
+        res = self._fallback_decompose(request)
+        res.ai_provider_used = provider_name
+        res.ai_model_used = model_name
+        return res
 
     def _fallback_decompose(self, request: MilestoneDecomposeRequest) -> MilestoneDecomposeResponse:
         """Deterministic, intelligent decomposition for sandbox testing."""
@@ -321,7 +306,14 @@ class TrustPayAIService:
         """
         Inspects submitted code against milestone acceptance criteria and runs
         heuristic & AI-assisted vulnerability and secret leak scans.
+        Supports Privacy Mode (routes to local Ollama on-prem).
         """
+        provider, provider_name, model_name = self.router.select_provider(
+            requested_provider=request.provider,
+            task_type="code",
+            privacy_mode=bool(request.privacy_mode),
+        )
+
         # Step A: Run static regex security scanner
         findings: List[SecurityFinding] = []
         for pat in SECURITY_PATTERNS:
@@ -354,7 +346,7 @@ class TrustPayAIService:
         else:
             security_grade = "Grade A"
 
-        # Step C: AI verification of criteria compliance using Gemini
+        # Step C: AI verification of criteria compliance
         system_instruction = (
             "You are TrustPay AI's senior code compliance auditor and security inspector. "
             "You evaluate developer submissions against agreed milestone criteria. "
@@ -377,15 +369,16 @@ class TrustPayAIService:
             "}"
         )
 
-        gemini_data = self._call_gemini_json(user_prompt, system_instruction)
+        ai_data = None
+        if provider:
+            ai_data = provider.generate_json(user_prompt, system_instruction)
 
-        if gemini_data:
-            base_score = int(gemini_data.get("compliance_score", 85))
-            passed = gemini_data.get("passed_checks", [])
-            failed = gemini_data.get("failed_checks", [])
-            feedback = gemini_data.get("feedback", "Automated code inspection completed.")
+        if ai_data:
+            base_score = int(ai_data.get("compliance_score", 85))
+            passed = ai_data.get("passed_checks", [])
+            failed = ai_data.get("failed_checks", [])
+            feedback = ai_data.get("feedback", "Automated code inspection completed.")
         else:
-            # Deterministic heuristic fallback
             passed, failed, base_score, feedback = self._heuristic_code_audit(
                 request.code_content, request.milestone_spec
             )
@@ -417,6 +410,9 @@ class TrustPayAIService:
             security_findings=findings,
             feedback=feedback,
             payout_recommendation=payout_rec,
+            ai_provider_used=provider_name,
+            ai_model_used=model_name,
+            privacy_mode_active=bool(request.privacy_mode or "Ollama" in provider_name),
         )
 
     def _heuristic_code_audit(self, code: str, spec: str) -> Tuple[List[str], List[str], int, str]:
@@ -464,17 +460,20 @@ class TrustPayAIService:
         - Brand visual logo / presence
         - Audio transcript adherence for required discount code (e.g. 'ACME30') & keywords
         """
-        # Step A: Local caption disclosure checks
+        provider, provider_name, model_name = self.router.select_provider(
+            requested_provider=request.provider,
+            task_type="multimodal",
+            requires_multimodal=True,
+        )
+
         caption_lower = request.caption.lower()
         ftc_tags = ["#ad", "#sponsored", "#paidpartnership", "paid partnership", "#partner"]
         has_ftc = any(tag in caption_lower for tag in ftc_tags)
 
-        # Check for promo code in caption
         promo_in_caption = False
         if request.required_coupon:
             promo_in_caption = request.required_coupon.lower() in caption_lower
 
-        # Step B: Multimodal Gemini evaluation
         system_instruction = (
             "You are TrustPay AI's multimodal influencer campaign verifier. "
             "You inspect social media submissions (captions, images, video frames, audio transcripts). "
@@ -485,14 +484,6 @@ class TrustPayAIService:
             "4. Calculate an overall fulfillment score (0 to 100).\n"
             "Output must be valid JSON."
         )
-
-        contents: List[Any] = []
-        if media_bytes and media_mime_type:
-            try:
-                media_part = types.Part.from_bytes(data=media_bytes, mime_type=media_mime_type)
-                contents.append(media_part)
-            except Exception as e:
-                logger.warning(f"Unable to format media part: {e}")
 
         prompt_text = (
             f"Brand Name: {request.brand_name}\n"
@@ -514,9 +505,18 @@ class TrustPayAIService:
             '  "feedback": "Great delivery..."\n'
             "}"
         )
-        contents.append(prompt_text)
 
-        gemini_result = self._call_gemini_json(contents, system_instruction)
+        gemini_result = None
+        if provider:
+            if media_bytes and media_mime_type and hasattr(provider, "generate_multimodal_json"):
+                from google.genai import types
+                try:
+                    media_part = types.Part.from_bytes(data=media_bytes, mime_type=media_mime_type)
+                    gemini_result = provider.generate_multimodal_json([media_part, prompt_text], system_instruction)
+                except Exception as e:
+                    logger.warning(f"Failed to attach media part: {e}")
+            if not gemini_result:
+                gemini_result = provider.generate_json(prompt_text, system_instruction)
 
         if gemini_result:
             score = int(gemini_result.get("score", 90))
@@ -529,7 +529,6 @@ class TrustPayAIService:
             transcript = gemini_result.get("detected_transcript", request.audio_transcript)
             feedback = gemini_result.get("feedback", "Influencer deliverable evaluated successfully.")
         else:
-            # Deterministic simulation for sandbox demo
             score = 92
             ftc_compliant = has_ftc
             brand_logo = True
@@ -587,6 +586,8 @@ class TrustPayAIService:
             detected_transcript=transcript,
             feedback=feedback,
             payout_recommendation=payout_rec,
+            ai_provider_used=provider_name,
+            ai_model_used=model_name,
         )
 
     # -----------------------------------------------------------------------
@@ -597,7 +598,13 @@ class TrustPayAIService:
         Objectively mediates contested escrow milestones by assessing contract specs,
         actual deliverable proof, and respective statements to recommend an equitable
         split payout with remediation tasks.
+        Routes to Grok or Gemini.
         """
+        provider, provider_name, model_name = self.router.select_provider(
+            requested_provider=request.provider,
+            task_type="dispute",
+        )
+
         system_instruction = (
             "You are TrustPay AI's autonomous and impartial dispute arbitrator. "
             "When a milestone deliverable is contested by a company or talent, you review "
@@ -626,13 +633,15 @@ class TrustPayAIService:
             "}"
         )
 
-        gemini_data = self._call_gemini_json(user_prompt, system_instruction)
+        ai_data = None
+        if provider:
+            ai_data = provider.generate_json(user_prompt, system_instruction)
 
-        if gemini_data:
-            talent_pct = int(gemini_data.get("talent_payout_percentage", 70))
+        if ai_data:
+            talent_pct = int(ai_data.get("talent_payout_percentage", 70))
             company_pct = 100 - talent_pct
-            rationale = gemini_data.get("settlement_rationale", "Impartial dispute split based on deliverable value.")
-            punch_list_raw = gemini_data.get("punch_list", [])
+            rationale = ai_data.get("settlement_rationale", "Impartial dispute split based on deliverable value.")
+            punch_list_raw = ai_data.get("punch_list", [])
             punch_list = [
                 RemediationAction(
                     task=item.get("task", "Address requested refinement"),
@@ -642,7 +651,6 @@ class TrustPayAIService:
                 for item in punch_list_raw
             ]
         else:
-            # Deterministic split mediator fallback
             talent_pct = 75
             company_pct = 25
             rem_amount = round((company_pct / 100.0) * request.step_amount, 2)
@@ -671,8 +679,258 @@ class TrustPayAIService:
             settlement_rationale=rationale,
             punch_list=punch_list,
             is_split_settlement=talent_pct > 0 and company_pct > 0,
+            ai_provider_used=provider_name,
+            ai_model_used=model_name,
+        )
+
+    # -----------------------------------------------------------------------
+    # 5. AI Talent Matchmaker
+    # -----------------------------------------------------------------------
+    def match_talent(self, request: TalentMatchRequest) -> TalentMatchResponse:
+        """
+        Evaluates project brief against candidate talent profiles (verified on-time rates,
+        security grades, skills overlap, and audience authenticity) to recommend the
+        top K best-fit talent.
+        """
+        provider, provider_name, model_name = self.router.select_provider(
+            requested_provider=request.provider,
+            task_type="general",
+        )
+
+        candidates = request.candidate_pool or DEFAULT_TALENT_POOL
+        if request.category:
+            filtered = [c for c in candidates if c.category.lower() == request.category.lower()]
+            if filtered:
+                candidates = filtered
+
+        system_instruction = (
+            "You are TrustPay AI's senior talent matchmaker and reputation auditor. "
+            "Given a project brief and a list of talent profiles with verified stats (spec compliance rate, "
+            "on-time delivery rate, security grade, badges), select and rank the top candidates. "
+            "Calculate an accurate match_score (0-100), detailed fit_reason, key_strengths, and risk_assessment. "
+            "Output must be valid JSON."
+        )
+
+        candidates_data = [c.model_dump() for c in candidates]
+        user_prompt = (
+            f"Project Brief: {request.project_prompt}\n"
+            f"Target Category: {request.category or 'Any'}\n"
+            f"Target Budget: ${request.budget or 'Flexible'}\n"
+            f"Top K: {request.top_k}\n\n"
+            f"Available Verified Candidates:\n{json.dumps(candidates_data, indent=2)}\n\n"
+            "Return JSON matching:\n"
+            "{\n"
+            '  "project_summary": "Summary of requirements...",\n'
+            '  "required_skills_detected": ["Skill 1", "Skill 2"],\n'
+            '  "matches": [\n'
+            "    {\n"
+            '      "talent_id": "id",\n'
+            '      "match_score": 96,\n'
+            '      "fit_reason": "Clear explanation of fit...",\n'
+            '      "key_strengths": ["Strength 1", "Strength 2"],\n'
+            '      "risk_assessment": "Low Risk: Grade A security with 99% on-time record."\n'
+            "    }\n"
+            "  ]\n"
+            "}"
+        )
+
+        ai_data = None
+        if provider:
+            ai_data = provider.generate_json(user_prompt, system_instruction)
+
+        candidate_map = {c.talent_id: c for c in candidates}
+        matched_items: List[TalentMatchResultItem] = []
+
+        if ai_data and "matches" in ai_data:
+            try:
+                for m in ai_data.get("matches", []):
+                    tid = m.get("talent_id")
+                    if tid in candidate_map:
+                        matched_items.append(
+                            TalentMatchResultItem(
+                                talent_profile=candidate_map[tid],
+                                match_score=int(m.get("match_score", 90)),
+                                fit_reason=m.get("fit_reason", "High skill alignment and stellar reliability."),
+                                key_strengths=m.get("key_strengths", candidate_map[tid].skills_or_niche[:3]),
+                                risk_assessment=m.get("risk_assessment", f"Verified {candidate_map[tid].security_grade}"),
+                            )
+                        )
+                if matched_items:
+                    return TalentMatchResponse(
+                        project_summary=ai_data.get("project_summary", request.project_prompt[:150]),
+                        required_skills_detected=ai_data.get("required_skills_detected", ["Technical Delivery"]),
+                        top_matches=matched_items[: request.top_k],
+                        ai_provider_used=provider_name,
+                        ai_model_used=model_name,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to parse AI talent match results: {e}. Falling back to deterministic matching.")
+
+        return self._fallback_match_talent(request, candidates, provider_name, model_name)
+
+    def _fallback_match_talent(
+        self,
+        request: TalentMatchRequest,
+        candidates: List[TalentProfile],
+        provider_name: str,
+        model_name: str,
+    ) -> TalentMatchResponse:
+        """Deterministic heuristic talent matching for offline/sandbox operation."""
+        prompt_lower = request.project_prompt.lower()
+        scored: List[Tuple[int, TalentProfile, List[str]]] = []
+
+        for c in candidates:
+            score = 50  # Base score
+            matched_skills = []
+
+            for s in c.skills_or_niche:
+                if s.lower() in prompt_lower:
+                    score += 15
+                    matched_skills.append(s)
+
+            # Quality bonuses
+            if c.security_grade == "Grade A":
+                score += 10
+            elif c.security_grade == "Grade B":
+                score += 5
+
+            if c.ontime_delivery_rate >= 95.0:
+                score += 10
+            if c.spec_compliance_rate >= 95.0:
+                score += 10
+
+            if not matched_skills:
+                matched_skills = c.skills_or_niche[:2]
+
+            final_score = min(99, max(60, score))
+            scored.append((final_score, c, matched_skills))
+
+        # Sort descending by match score
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        matched_items = []
+        for match_score, profile, key_skills in scored[: request.top_k]:
+            matched_items.append(
+                TalentMatchResultItem(
+                    talent_profile=profile,
+                    match_score=match_score,
+                    fit_reason=f"Strong domain overlap in {', '.join(key_skills)} with {profile.ontime_delivery_rate}% historical on-time execution.",
+                    key_strengths=key_skills + profile.verified_badges[:1],
+                    risk_assessment=f"Low Risk: Verified {profile.security_grade} track record ({profile.spec_compliance_rate}% compliance rate).",
+                )
+            )
+
+        detected_skills = list({skill for _, _, skills in scored for skill in skills})[:5]
+
+        return TalentMatchResponse(
+            project_summary=f"Marketplace matching for: {request.project_prompt[:120]}...",
+            required_skills_detected=detected_skills or ["Full-Stack Engineering", "Milestone Execution"],
+            top_matches=matched_items,
+            ai_provider_used=provider_name,
+            ai_model_used=model_name,
         )
 
 
-# Singleton instance for quick imports
+# ---------------------------------------------------------------------------
+# Default Talent Profiles for Instant Marketplace Simulation
+# ---------------------------------------------------------------------------
+DEFAULT_TALENT_POOL = [
+    TalentProfile(
+        talent_id="dev_1",
+        name="Devansh Sharma",
+        handle="@devansh_codes",
+        category="developer",
+        skills_or_niche=["Python", "FastAPI", "PayPal REST API", "SQLAlchemy", "Security Hardening", "Backend"],
+        hourly_or_campaign_rate=65.0,
+        spec_compliance_rate=98.5,
+        ontime_delivery_rate=99.0,
+        security_grade="Grade A",
+        verified_badges=["Escrow Specialist", "Clean Code Certified", "Top 1% PayPal"],
+        bio_or_summary="Senior backend architect specializing in fintech, PayPal escrow authorizations, and secure multi-tier APIs.",
+    ),
+    TalentProfile(
+        talent_id="dev_2",
+        name="Alex Rivera",
+        handle="@arivera_ui",
+        category="developer",
+        skills_or_niche=["Next.js", "React", "Tailwind CSS", "TypeScript", "AG Grid", "Frontend"],
+        hourly_or_campaign_rate=55.0,
+        spec_compliance_rate=96.0,
+        ontime_delivery_rate=95.0,
+        security_grade="Grade A",
+        verified_badges=["Top 5% Timeliness", "UI/UX Master"],
+        bio_or_summary="Frontend engineer crafting fluid milestone dashboards, escrow visualizers, and responsive web applications.",
+    ),
+    TalentProfile(
+        talent_id="dev_3",
+        name="Jordan Lee",
+        handle="@jordan_sec",
+        category="developer",
+        skills_or_niche=["Python", "Go", "Docker", "Cryptography", "OAuth2", "Security Auditing"],
+        hourly_or_campaign_rate=80.0,
+        spec_compliance_rate=94.0,
+        ontime_delivery_rate=92.0,
+        security_grade="Grade A",
+        verified_badges=["Zero Leak Record", "Security Auditor"],
+        bio_or_summary="Application security engineer specializing in vulnerability mitigation, credential protection, and sandbox isolation.",
+    ),
+    TalentProfile(
+        talent_id="dev_4",
+        name="Priya Patel",
+        handle="@priyacodes",
+        category="developer",
+        skills_or_niche=["Node.js", "Express", "PostgreSQL", "React", "Stripe", "Full-Stack"],
+        hourly_or_campaign_rate=50.0,
+        spec_compliance_rate=91.0,
+        ontime_delivery_rate=93.0,
+        security_grade="Grade B",
+        verified_badges=["Verified Developer"],
+        bio_or_summary="Full-stack web developer building scalable database-driven apps and marketplace backends.",
+    ),
+    TalentProfile(
+        talent_id="inf_1",
+        name="Maya Chen",
+        handle="@mayatech",
+        category="influencer",
+        skills_or_niche=["Tech Reviews", "Instagram Reels", "TikTok", "YouTube Shorts", "Developer Tools"],
+        hourly_or_campaign_rate=350.0,
+        spec_compliance_rate=99.0,
+        ontime_delivery_rate=98.0,
+        security_grade="Grade A",
+        audience_authenticity_score=96.5,
+        verified_badges=["Verified Creator", "FTC Compliance Pro", "Top Engagement"],
+        bio_or_summary="Tech and developer tools reviewer with 250k engaged organic followers and 0% bot anomalies.",
+    ),
+    TalentProfile(
+        talent_id="inf_2",
+        name="Marcus Vance",
+        handle="@marcusfintech",
+        category="influencer",
+        skills_or_niche=["Fintech & Crypto", "X / Twitter Threads", "Podcast", "YouTube Long-form"],
+        hourly_or_campaign_rate=500.0,
+        spec_compliance_rate=95.0,
+        ontime_delivery_rate=96.0,
+        security_grade="Grade A",
+        audience_authenticity_score=94.0,
+        verified_badges=["Fintech Thought Leader", "High Conversion"],
+        bio_or_summary="Fintech analyst covering modern payment gateways, autonomous escrow, and startup launches.",
+    ),
+    TalentProfile(
+        talent_id="inf_3",
+        name="Sophia Kim",
+        handle="@sophiasaas",
+        category="influencer",
+        skills_or_niche=["Design & SaaS", "Short-Form Video", "TikTok", "Product Demos"],
+        hourly_or_campaign_rate=250.0,
+        spec_compliance_rate=93.0,
+        ontime_delivery_rate=97.0,
+        security_grade="Grade B",
+        audience_authenticity_score=92.0,
+        verified_badges=["Rising Star"],
+        bio_or_summary="Product reviewer focusing on SaaS launches, AI developer tools, and workflow automation.",
+    ),
+]
+
+
+# Singleton instance for imports
 ai_service = TrustPayAIService()
