@@ -56,7 +56,7 @@ export default function HomePage() {
           </p>
 
           {/* Dual CTAs */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-8 sm:mb-12 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row gap-4 mb-14 w-full sm:w-auto">
             <Link
               href="/freelancer/dashboard"
               onClick={() => setActiveRole("FREELANCER")}
@@ -77,22 +77,6 @@ export default function HomePage() {
               <PlusCircle className="w-5 h-5 text-[#0070E0]" />
               <span>Hire Talent</span>
             </Link>
-          </div>
-
-          {/* Current Mode Indicator Pill */}
-          <div className="flex items-center gap-2.5 text-xs text-gray-500 mb-12 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full border border-gray-200 shadow-xs">
-            <span className="font-semibold text-gray-700">Active Mode:</span>
-            <span className="font-bold text-[#0070E0] flex items-center gap-1">
-              {activeRole === "FREELANCER" ? <User className="w-3.5 h-3.5" /> : <Building className="w-3.5 h-3.5" />}
-              {activeRole === "FREELANCER" ? "Freelancer View" : "Client View"}
-            </span>
-            <span className="text-gray-300">•</span>
-            <button
-              onClick={toggleRole}
-              className="text-[#003087] font-bold hover:underline cursor-pointer"
-            >
-              Switch to {activeRole === "FREELANCER" ? "Client" : "Freelancer"} Mode
-            </button>
           </div>
 
           {/* Interactive Escrow Mockup / Window Frame */}

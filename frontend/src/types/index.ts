@@ -83,6 +83,9 @@ export interface Project {
   status: ProjectStatus;
   createdAt: string;
   applicationsCount?: number;
+  requiredSkills?: string[];
+  experienceLevel?: string;
+  additionalRequirements?: string;
 }
 
 // ==========================================

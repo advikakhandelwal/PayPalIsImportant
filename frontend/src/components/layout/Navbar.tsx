@@ -2,9 +2,19 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { ShieldCheck, User, Building, Menu, X, ArrowRight } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  ShieldCheck,
+  User,
+  Building,
+  Menu,
+  X,
+  ArrowRight,
+  LayoutDashboard,
+  ArrowRightLeft,
+} from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { UserRole } from "@/types";
 
 const LANDING_NAV = [
   { label: "Home", id: "home" },
@@ -19,10 +29,25 @@ type SectionId = (typeof LANDING_NAV)[number]["id"];
 export const Navbar: React.FC = () => {
   const { activeRole, setActiveRole } = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
   const isLandingPage = pathname === "/";
 
   const [activeSection, setActiveSection] = useState<SectionId>("home");
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const activeDashboardHref =
+    activeRole === "FREELANCER" ? "/freelancer/dashboard" : "/client/dashboard";
+  const otherRole: UserRole = activeRole === "FREELANCER" ? "CLIENT" : "FREELANCER";
+  const otherRoleLabel = otherRole === "FREELANCER" ? "Freelancer" : "Client";
+  const otherRoleDashboardHref =
+    otherRole === "FREELANCER" ? "/freelancer/dashboard" : "/client/dashboard";
+
+  /* ───── Switch account role & navigate to its dashboard ───── */
+  const handleSwitchAccount = () => {
+    setActiveRole(otherRole);
+    router.push(otherRoleDashboardHref);
+    setMobileOpen(false);
+  };
 
   /* ───── IntersectionObserver for highlighting active section ───── */
   useEffect(() => {
@@ -146,45 +171,38 @@ export const Navbar: React.FC = () => {
             )}
           </div>
 
-          {/* Right Controls: Role Toggle + Auth */}
-          <div className="flex items-center gap-2 sm:gap-4">
-            {/* Role Switcher Pill */}
-            <div className="bg-gray-50 p-1 rounded-full border border-gray-200 flex items-center">
-              <button
-                onClick={() => setActiveRole("FREELANCER")}
-                className={`px-3 sm:px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activeRole === "FREELANCER"
-                    ? "bg-white text-[#0070E0] shadow-sm ring-1 ring-gray-200"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                <User className="w-3.5 h-3.5" />
-                <span>Freelancer</span>
-              </button>
-              <button
-                onClick={() => setActiveRole("CLIENT")}
-                className={`px-3 sm:px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activeRole === "CLIENT"
-                    ? "bg-white text-[#003087] shadow-sm ring-1 ring-gray-200"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                <Building className="w-3.5 h-3.5" />
-                <span>Client</span>
-              </button>
-            </div>
+          {/* Right Controls: Back to Dashboard, Account Switcher, Auth */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* 1. Back to Dashboard Button */}
+            <Link
+              href={activeDashboardHref}
+              className="flex items-center gap-2 bg-blue-50 hover:bg-blue-100/80 text-[#0070E0] px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all border border-blue-200/60 shadow-xs group cursor-pointer"
+            >
+              <LayoutDashboard className="w-3.5 h-3.5 text-[#0070E0]" />
+              <span className="whitespace-nowrap">Back to Dashboard</span>
+            </Link>
 
-            {/* Auth Buttons */}
+            {/* 2. Switch Account Button (for dual-role users) */}
+            <button
+              onClick={handleSwitchAccount}
+              className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-gray-600 hover:text-[#003087] bg-gray-50 hover:bg-gray-100 px-3 py-2 rounded-full border border-gray-200 transition-all cursor-pointer whitespace-nowrap shadow-2xs"
+              title={`Switch to ${otherRoleLabel} account`}
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5 text-[#0070E0]" />
+              <span>Switch to {otherRoleLabel}</span>
+            </button>
+
+            {/* 3. Auth Buttons */}
             <Link
               href="/auth/login"
-              className="text-sm font-bold text-[#003087] hover:text-[#0070E0] px-3 py-2 hidden sm:inline-block transition-colors"
+              className="text-sm font-bold text-[#003087] hover:text-[#0070E0] px-3 py-2 hidden md:inline-block transition-colors"
             >
               Log In
             </Link>
 
             <Link
               href="/auth/signup"
-              className="btn-shadow bg-[#0070E0] hover:bg-[#005bb8] text-white text-xs sm:text-sm font-bold px-5 sm:px-6 py-2.5 rounded-full transition-all flex items-center gap-1.5"
+              className="btn-shadow bg-[#0070E0] hover:bg-[#005bb8] text-white text-xs sm:text-sm font-bold px-4 sm:px-6 py-2.5 rounded-full transition-all flex items-center gap-1.5"
             >
               <span>Sign Up</span>
               <ArrowRight className="w-3.5 h-3.5 hidden sm:inline-block" />
@@ -226,17 +244,35 @@ export const Navbar: React.FC = () => {
 
               <div className="pt-4 border-t border-gray-100 flex flex-col gap-2">
                 <Link
-                  href="/auth/login"
-                  className="w-full text-center py-2.5 text-sm font-bold text-[#003087] border border-gray-200 rounded-full hover:bg-gray-50"
+                  href={activeDashboardHref}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-[#0070E0] bg-blue-50 border border-blue-200 rounded-full"
                 >
-                  Log In
+                  <LayoutDashboard className="w-4 h-4" />
+                  Back to Dashboard
                 </Link>
-                <Link
-                  href="/auth/signup"
-                  className="w-full text-center py-2.5 text-sm font-bold text-white bg-[#0070E0] rounded-full shadow-md hover:bg-[#005bb8]"
+
+                <button
+                  onClick={handleSwitchAccount}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-full cursor-pointer hover:bg-gray-100"
                 >
-                  Create Free Account
-                </Link>
+                  <ArrowRightLeft className="w-4 h-4 text-[#0070E0]" />
+                  Switch to {otherRoleLabel} Account
+                </button>
+
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <Link
+                    href="/auth/login"
+                    className="w-full text-center py-2.5 text-sm font-bold text-[#003087] border border-gray-200 rounded-full hover:bg-gray-50"
+                  >
+                    Log In
+                  </Link>
+                  <Link
+                    href="/auth/signup"
+                    className="w-full text-center py-2.5 text-sm font-bold text-white bg-[#0070E0] rounded-full shadow-md hover:bg-[#005bb8]"
+                  >
+                    Sign Up
+                  </Link>
+                </div>
               </div>
             </nav>
           </div>
