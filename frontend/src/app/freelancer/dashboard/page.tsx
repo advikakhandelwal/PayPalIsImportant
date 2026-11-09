@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -31,6 +31,16 @@ import {
   Send,
   ShieldCheck,
   Layers,
+  Filter,
+  DollarSign,
+  Calendar,
+  Briefcase,
+  Users,
+  Eye,
+  SlidersHorizontal,
+  RotateCcw,
+  Check,
+  Building,
 } from "lucide-react";
 
 type FreelancerTab = "overview" | "projects" | "applications" | "contracts" | "profile" | "scorecard";
@@ -52,9 +62,15 @@ function FreelancerDashboardContent() {
     }
   }, [searchParams]);
 
-  // Project Search & Domain Filter State
+  // Marketplace Browse Projects Search, Filter & Sort State
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDomain, setSelectedDomain] = useState<string>("ALL");
+  const [selectedSkill, setSelectedSkill] = useState<string>("ALL");
+  const [selectedExperience, setSelectedExperience] = useState<string>("ALL");
+  const [minBudget, setMinBudget] = useState<string>("");
+  const [maxBudget, setMaxBudget] = useState<string>("");
+  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "budget_low" | "budget_high">("newest");
+  const [selectedProjectForDetails, setSelectedProjectForDetails] = useState<Project | null>(null);
 
   // Application Modal State
   const [selectedProjectForApply, setSelectedProjectForApply] = useState<Project | null>(null);
@@ -79,14 +95,112 @@ function FreelancerDashboardContent() {
   const isUnrated = currentUser.isNewMember || currentUser.trustScorecard.completedProjects === 0;
   const escrowStatusInfo = getEscrowStatusInfo(activeContract.escrowStatus);
 
-  // Filter projects
-  const filteredProjects = projects.filter((p) => {
-    const matchesSearch =
-      p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesDomain = selectedDomain === "ALL" || p.domain === selectedDomain;
-    return matchesSearch && matchesDomain;
-  });
+  // Filter only OPEN marketplace projects (excluding any project created by the current user)
+  const openMarketplaceProjects = useMemo(() => {
+    return projects.filter(
+      (p) => p.status === "OPEN" && p.clientId !== currentUser.id
+    );
+  }, [projects, currentUser.id]);
+
+  // Dynamically extract all unique domains and skills from available projects
+  const availableDomains = useMemo(() => {
+    const set = new Set<string>();
+    openMarketplaceProjects.forEach((p) => {
+      if (p.domain) set.add(p.domain);
+    });
+    return Array.from(set).sort();
+  }, [openMarketplaceProjects]);
+
+  const availableSkills = useMemo(() => {
+    const set = new Set<string>();
+    openMarketplaceProjects.forEach((p) => {
+      p.requiredSkills?.forEach((skill) => set.add(skill));
+    });
+    return Array.from(set).sort();
+  }, [openMarketplaceProjects]);
+
+  // Filtered and sorted projects
+  const filteredAndSortedProjects = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const min = minBudget !== "" ? parseFloat(minBudget) : null;
+    const max = maxBudget !== "" ? parseFloat(maxBudget) : null;
+
+    const filtered = openMarketplaceProjects.filter((p) => {
+      // Search matching title, description, domain, or requiredSkills
+      if (query) {
+        const titleMatch = p.title.toLowerCase().includes(query);
+        const descMatch = p.description.toLowerCase().includes(query);
+        const domainMatch = p.domain.toLowerCase().includes(query);
+        const skillMatch = p.requiredSkills?.some((s) => s.toLowerCase().includes(query));
+        if (!titleMatch && !descMatch && !domainMatch && !skillMatch) {
+          return false;
+        }
+      }
+
+      // Domain filter
+      if (selectedDomain !== "ALL" && p.domain !== selectedDomain) {
+        return false;
+      }
+
+      // Skill filter
+      if (selectedSkill !== "ALL" && !p.requiredSkills?.includes(selectedSkill)) {
+        return false;
+      }
+
+      // Experience filter
+      if (selectedExperience !== "ALL" && p.experienceLevel !== selectedExperience) {
+        return false;
+      }
+
+      // Min budget filter
+      if (min !== null && !isNaN(min) && p.totalBudget < min) {
+        return false;
+      }
+
+      // Max budget filter
+      if (max !== null && !isNaN(max) && p.totalBudget > max) {
+        return false;
+      }
+
+      return true;
+    });
+
+    // Sorting
+    return filtered.sort((a, b) => {
+      if (sortBy === "newest") {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+      if (sortBy === "oldest") {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+      if (sortBy === "budget_low") {
+        return a.totalBudget - b.totalBudget;
+      }
+      if (sortBy === "budget_high") {
+        return b.totalBudget - a.totalBudget;
+      }
+      return 0;
+    });
+  }, [openMarketplaceProjects, searchQuery, selectedDomain, selectedSkill, selectedExperience, minBudget, maxBudget, sortBy]);
+
+  const hasActiveFilters =
+    searchQuery.trim() !== "" ||
+    selectedDomain !== "ALL" ||
+    selectedSkill !== "ALL" ||
+    selectedExperience !== "ALL" ||
+    minBudget !== "" ||
+    maxBudget !== "" ||
+    sortBy !== "newest";
+
+  const handleResetFilters = () => {
+    setSearchQuery("");
+    setSelectedDomain("ALL");
+    setSelectedSkill("ALL");
+    setSelectedExperience("ALL");
+    setMinBudget("");
+    setMaxBudget("");
+    setSortBy("newest");
+  };
 
   // Freelancer's applications
   const myApplications = applications.filter(
@@ -401,81 +515,393 @@ function FreelancerDashboardContent() {
 
       {/* TAB 2: BROWSE PROJECTS */}
       {activeTab === "projects" && (
-        <div className="space-y-6">
+        <div className="space-y-6 animate-fade-in">
+          {/* Header & Subtitle */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold text-slate-900">Browse Projects</h2>
-              <p className="text-xs text-slate-500">Open client postings with guaranteed milestone escrow funding.</p>
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-bold text-slate-900">Browse Projects</h2>
+                <Badge variant="paypal" size="sm">
+                  {filteredAndSortedProjects.length} Available
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Explore open client postings backed by guaranteed PayPal milestone escrow funding.
+              </p>
             </div>
-            <div className="w-full sm:w-72">
-              <Input
-                placeholder="Search projects by keyword..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
+
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleResetFilters}
+                className="text-xs text-paypal-blue hover:text-paypal-dark self-start sm:self-auto rounded-full"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                Reset All Filters
+              </Button>
+            )}
           </div>
 
-          {/* Domain Filter Pills */}
-          <div className="flex flex-wrap gap-2 text-xs">
-            {["ALL", "Full-Stack Development", "Video Production & Influencer", "AI Engineering"].map((dom) => (
+          {/* Search Bar & Sort Dropdown */}
+          <Card className="p-4 bg-white border border-slate-200 rounded-2xl shadow-xs">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+              {/* Search Input */}
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by project title, description, domain, or skills (e.g. Next.js, Video, Python)..."
+                  className="w-full pl-10 pr-9 py-2.5 rounded-full border border-slate-200 bg-slate-50/50 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-paypal-blue/30 focus:border-paypal-blue transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    title="Clear search"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Sort Dropdown */}
+              <div className="flex items-center gap-2 self-end md:self-auto">
+                <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">Sort by:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-full px-3 py-2 text-slate-700 focus:outline-none focus:border-paypal-blue cursor-pointer shadow-xs"
+                >
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                  <option value="budget_high">Budget: High to Low</option>
+                  <option value="budget_low">Budget: Low to High</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Filter Controls Row */}
+            <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Category / Domain Filter */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-600 block uppercase tracking-wider">
+                  Category / Domain
+                </label>
+                <select
+                  value={selectedDomain}
+                  onChange={(e) => setSelectedDomain(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 focus:outline-none focus:border-paypal-blue cursor-pointer"
+                >
+                  <option value="ALL">All Categories</option>
+                  {availableDomains.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Required Skill Filter */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-600 block uppercase tracking-wider">
+                  Required Skill
+                </label>
+                <select
+                  value={selectedSkill}
+                  onChange={(e) => setSelectedSkill(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 focus:outline-none focus:border-paypal-blue cursor-pointer"
+                >
+                  <option value="ALL">All Skills</option>
+                  {availableSkills.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Experience Level Filter */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-600 block uppercase tracking-wider">
+                  Experience Level
+                </label>
+                <select
+                  value={selectedExperience}
+                  onChange={(e) => setSelectedExperience(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 focus:outline-none focus:border-paypal-blue cursor-pointer"
+                >
+                  <option value="ALL">All Experience Levels</option>
+                  <option value="Entry Level">Entry Level</option>
+                  <option value="Intermediate">Intermediate</option>
+                  <option value="Expert">Expert</option>
+                </select>
+              </div>
+
+              {/* Budget Range Inputs */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-600 block uppercase tracking-wider">
+                  Budget Range ($)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Min"
+                    value={minBudget}
+                    onChange={(e) => setMinBudget(e.target.value)}
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-slate-700 focus:outline-none focus:border-paypal-blue"
+                  />
+                  <span className="text-slate-400 text-xs">-</span>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Max"
+                    value={maxBudget}
+                    onChange={(e) => setMaxBudget(e.target.value)}
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-slate-700 focus:outline-none focus:border-paypal-blue"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Domain Pills */}
+            <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-medium text-slate-400 mr-1">Quick Filter:</span>
               <button
-                key={dom}
-                onClick={() => setSelectedDomain(dom)}
-                className={`px-3 py-1.5 rounded-full border transition-all cursor-pointer ${
-                  selectedDomain === dom
-                    ? "bg-paypal-dark text-white border-paypal-dark font-medium shadow-xs"
-                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+                onClick={() => setSelectedDomain("ALL")}
+                className={`px-3 py-1 rounded-full text-xs transition-all cursor-pointer font-medium ${
+                  selectedDomain === "ALL"
+                    ? "bg-paypal-dark text-white shadow-xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
-                {dom === "ALL" ? "All Domains" : dom}
+                All Domains
               </button>
-            ))}
-          </div>
+              {availableDomains.map((dom) => (
+                <button
+                  key={dom}
+                  onClick={() => setSelectedDomain(dom)}
+                  className={`px-3 py-1 rounded-full text-xs transition-all cursor-pointer font-medium ${
+                    selectedDomain === dom
+                      ? "bg-paypal-dark text-white shadow-xs"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {dom}
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          {/* Active Filter Indicators */}
+          {hasActiveFilters && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+              <span className="font-semibold text-slate-500">Active filters:</span>
+              {searchQuery && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                  Search: &ldquo;{searchQuery}&rdquo;
+                  <button onClick={() => setSearchQuery("")} className="hover:text-blue-800">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {selectedDomain !== "ALL" && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                  Domain: {selectedDomain}
+                  <button onClick={() => setSelectedDomain("ALL")} className="hover:text-blue-800">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {selectedSkill !== "ALL" && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                  Skill: {selectedSkill}
+                  <button onClick={() => setSelectedSkill("ALL")} className="hover:text-blue-800">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {selectedExperience !== "ALL" && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                  Level: {selectedExperience}
+                  <button onClick={() => setSelectedExperience("ALL")} className="hover:text-blue-800">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {(minBudget || maxBudget) && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                  Budget: ${minBudget || "0"} - ${maxBudget || "∞"}
+                  <button
+                    onClick={() => {
+                      setMinBudget("");
+                      setMaxBudget("");
+                    }}
+                    className="hover:text-blue-800"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              <button
+                onClick={handleResetFilters}
+                className="text-xs text-rose-600 hover:underline font-semibold ml-1 cursor-pointer"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
 
           {/* Projects Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {filteredProjects.map((p) => (
-              <Card key={p.id} className="flex flex-col justify-between">
-                <div>
-                  <CardHeader>
-                    <div className="flex items-center justify-between mb-1">
-                      <Badge variant="paypal" size="sm">{p.domain}</Badge>
-                      <span className="text-xs font-bold text-paypal-dark">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {filteredAndSortedProjects.map((p) => (
+              <Card
+                key={p.id}
+                className="flex flex-col justify-between rounded-2xl border border-slate-200 hover:border-paypal-blue/40 hover:shadow-md transition-all duration-200 card-hover bg-white"
+              >
+                <div className="p-6">
+                  {/* Top Badges & Budget */}
+                  <div className="flex items-start justify-between gap-3 mb-2.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant="paypal" size="sm">
+                        {p.domain}
+                      </Badge>
+                      <Badge variant="success" size="sm" className="gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                        OPEN
+                      </Badge>
+                      {p.experienceLevel && (
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[11px] font-medium border border-slate-200">
+                          {p.experienceLevel}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-right whitespace-nowrap">
+                      <span className="text-base font-extrabold text-paypal-dark block leading-none">
                         {formatCurrency(p.totalBudget, p.currency)}
                       </span>
+                      <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">
+                        Escrow Funded
+                      </span>
                     </div>
-                    <CardTitle className="text-base">{p.title}</CardTitle>
-                    <CardDescription>
-                      Posted by <strong className="text-slate-700">{p.clientName}</strong> • {p.milestones.length} Milestones
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <p className="text-xs text-slate-600 line-clamp-3 leading-relaxed">{p.description}</p>
-                    <div className="pt-2 flex flex-wrap gap-1.5">
-                      {p.milestones.map((m) => (
-                        <span key={m.id} className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[11px]">
-                          Step {m.stepNumber}: {m.percentage}% ({formatCurrency(m.paymentAmount, m.currency)})
+                  </div>
+
+                  {/* Project Title */}
+                  <h3
+                    onClick={() => setSelectedProjectForDetails(p)}
+                    className="font-bold text-base text-slate-900 hover:text-paypal-blue cursor-pointer transition-colors line-clamp-1"
+                  >
+                    {p.title}
+                  </h3>
+
+                  {/* Client Info & Date Posted */}
+                  <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                    <span>
+                      Posted by <strong className="text-slate-700">{p.clientCompany || p.clientName}</strong>
+                    </span>
+                    <span>•</span>
+                    <span>{formatDate(p.createdAt)}</span>
+                  </p>
+
+                  {/* Description */}
+                  <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed mt-3">
+                    {p.description}
+                  </p>
+
+                  {/* Required Skills Chips */}
+                  {p.requiredSkills && p.requiredSkills.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {p.requiredSkills.map((skill) => (
+                        <span
+                          key={skill}
+                          className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-medium border border-slate-200"
+                        >
+                          {skill}
                         </span>
                       ))}
                     </div>
-                  </CardContent>
+                  )}
+
+                  {/* Key Metadata Stats */}
+                  <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Due {formatDate(p.deadline)}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{p.applicationsCount || 0} applications</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 col-span-2">
+                      <Layers className="w-3.5 h-3.5 text-slate-400" />
+                      <span>
+                        {p.milestones.length} Milestones (
+                        {p.milestones.map((m) => `${m.percentage}%`).join(" / ")})
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="p-6 pt-0 border-t border-slate-100 mt-4 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400">Due {formatDate(p.deadline)}</span>
-                  <Button variant="primary" size="sm" onClick={() => handleOpenApplyModal(p)}>
-                    View Details & Apply
-                  </Button>
+                {/* Card Action Footer */}
+                <div className="px-6 py-3.5 bg-slate-50/60 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    Verified Escrow
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedProjectForDetails(p)}
+                      className="rounded-full text-xs font-semibold"
+                    >
+                      View Details
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => handleOpenApplyModal(p)}
+                      className="rounded-full text-xs font-semibold"
+                    >
+                      Apply Now
+                      <ArrowRight className="w-3 h-3 ml-1" />
+                    </Button>
+                  </div>
                 </div>
               </Card>
             ))}
 
-            {filteredProjects.length === 0 && (
-              <div className="col-span-full p-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
-                <Search className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm font-semibold">No projects match your filter criteria.</p>
-                <p className="text-xs text-slate-400 mt-1">Try clearing your search or switching domains.</p>
+            {/* Empty State: No projects matching filters */}
+            {filteredAndSortedProjects.length === 0 && openMarketplaceProjects.length > 0 && (
+              <div className="col-span-full p-12 text-center text-slate-500 bg-white rounded-2xl border border-slate-200">
+                <Search className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <h4 className="text-sm font-bold text-slate-800">No projects match your filter criteria</h4>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                  Try adjusting your search query, switching categories, or clearing budget constraints.
+                </p>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleResetFilters}
+                  className="mt-4 rounded-full"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                  Clear All Filters
+                </Button>
+              </div>
+            )}
+
+            {/* Empty State: No open projects in marketplace at all */}
+            {openMarketplaceProjects.length === 0 && (
+              <div className="col-span-full p-12 text-center text-slate-500 bg-white rounded-2xl border border-slate-200">
+                <Briefcase className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <h4 className="text-sm font-bold text-slate-800">No Open Projects Available</h4>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                  There are currently no active project listings open for proposals. When clients publish projects, they will appear here automatically.
+                </p>
               </div>
             )}
           </div>
@@ -1055,6 +1481,209 @@ function FreelancerDashboardContent() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: VIEW PROJECT DETAILS */}
+      {selectedProjectForDetails && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-100 flex items-start justify-between gap-4 bg-slate-50/50">
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="paypal" size="sm">
+                    {selectedProjectForDetails.domain}
+                  </Badge>
+                  <Badge variant="success" size="sm" className="gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                    OPEN FOR PROPOSALS
+                  </Badge>
+                  {selectedProjectForDetails.experienceLevel && (
+                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-semibold border border-slate-200">
+                      {selectedProjectForDetails.experienceLevel}
+                    </span>
+                  )}
+                </div>
+                <h3 className="font-extrabold text-lg text-slate-900">
+                  {selectedProjectForDetails.title}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Posted by <strong className="text-slate-800">{selectedProjectForDetails.clientCompany || selectedProjectForDetails.clientName}</strong> • {formatDate(selectedProjectForDetails.createdAt)}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedProjectForDetails(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="p-6 overflow-y-auto space-y-6">
+              {/* Highlight Metrics Bar */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-blue-50/50 border border-blue-100">
+                <div>
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Total Escrow Budget
+                  </span>
+                  <span className="text-xl font-extrabold text-paypal-dark block mt-0.5">
+                    {formatCurrency(selectedProjectForDetails.totalBudget, selectedProjectForDetails.currency)}
+                  </span>
+                  <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 mt-0.5">
+                    <ShieldCheck className="w-3 h-3" /> PayPal Protected
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Submission Deadline
+                  </span>
+                  <span className="text-sm font-bold text-slate-800 block mt-1">
+                    {formatDate(selectedProjectForDetails.deadline)}
+                  </span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                    Final milestone delivery
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Competition
+                  </span>
+                  <span className="text-sm font-bold text-slate-800 block mt-1">
+                    {selectedProjectForDetails.applicationsCount || 0} Proposals
+                  </span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                    Actively reviewing
+                  </span>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Project Description
+                </h4>
+                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-line">
+                  {selectedProjectForDetails.description}
+                </p>
+              </div>
+
+              {/* Required Skills */}
+              {selectedProjectForDetails.requiredSkills && selectedProjectForDetails.requiredSkills.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Required Skills & Technologies
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedProjectForDetails.requiredSkills.map((skill) => (
+                      <span
+                        key={skill}
+                        className="px-3 py-1 rounded-full bg-slate-100 text-slate-800 text-xs font-medium border border-slate-200"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Requirements */}
+              {selectedProjectForDetails.additionalRequirements && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Special Requirements & Guidelines
+                  </h4>
+                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 leading-relaxed">
+                    {selectedProjectForDetails.additionalRequirements}
+                  </div>
+                </div>
+              )}
+
+              {/* Milestone Schedule */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Milestone Breakdown Schedule ({selectedProjectForDetails.milestones.length} Milestones)
+                  </h4>
+                  <span className="text-[11px] text-slate-400">Total: 100% Escrow Funded</span>
+                </div>
+
+                <div className="space-y-2.5">
+                  {selectedProjectForDetails.milestones.map((ms) => (
+                    <div
+                      key={ms.id}
+                      className="p-4 rounded-xl border border-slate-200 bg-white space-y-2 hover:border-slate-300 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-paypal-dark text-white text-xs font-bold flex items-center justify-center shrink-0">
+                            {ms.stepNumber}
+                          </span>
+                          <span className="font-bold text-xs sm:text-sm text-slate-900">
+                            {ms.title}
+                          </span>
+                        </div>
+                        <div className="text-right whitespace-nowrap">
+                          <span className="font-extrabold text-xs sm:text-sm text-paypal-dark">
+                            {formatCurrency(ms.paymentAmount, ms.currency)}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            {ms.percentage}% of total
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-600 pl-8 leading-relaxed">
+                        {ms.description}
+                      </p>
+
+                      {ms.deliverableRequirements && ms.deliverableRequirements.length > 0 && (
+                        <div className="pl-8 pt-1">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                            Deliverable Requirements:
+                          </span>
+                          <ul className="space-y-1">
+                            {ms.deliverableRequirements.map((req, idx) => (
+                              <li key={idx} className="text-xs text-slate-600 flex items-start gap-1.5">
+                                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                                <span>{req}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="p-4 px-6 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedProjectForDetails(null)}
+                className="rounded-full"
+              >
+                Close
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  const proj = selectedProjectForDetails;
+                  setSelectedProjectForDetails(null);
+                  handleOpenApplyModal(proj);
+                }}
+                className="rounded-full font-semibold"
+              >
+                Apply to This Project
+                <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+              </Button>
+            </div>
           </div>
         </div>
       )}

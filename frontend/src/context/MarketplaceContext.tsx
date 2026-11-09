@@ -9,6 +9,7 @@ interface MarketplaceContextType {
   activeContract: EscrowContract;
   applications: Application[];
   createProject: (newProject: Omit<Project, "id" | "createdAt">) => void;
+  updateProject: (projectId: string, updatedData: Partial<Project>) => void;
   submitApplication: (application: Omit<Application, "id" | "createdAt">) => void;
   submitDeliverable: (contractId: string, milestoneId: string, submission: DeliverableSubmission) => void;
   approveMilestone: (contractId: string, milestoneId: string) => void;
@@ -30,6 +31,13 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
       createdAt: new Date().toISOString(),
     };
     setProjects((prev) => [newProject, ...prev]);
+  };
+
+  // Client updates project
+  const updateProject = (projectId: string, updatedData: Partial<Project>) => {
+    setProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, ...updatedData } : p))
+    );
   };
 
   // Freelancer submits application
@@ -112,6 +120,7 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
         activeContract,
         applications,
         createProject,
+        updateProject,
         submitApplication,
         submitDeliverable,
         approveMilestone,
