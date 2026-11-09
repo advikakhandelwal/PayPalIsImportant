@@ -3,7 +3,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv/
+.venv/
 .env
+
+# Databases
+*.db
+*.sqlite3
 
 # Node
 node_modules/
