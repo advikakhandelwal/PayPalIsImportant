@@ -123,12 +123,6 @@ export const Footer: React.FC = () => {
                 </a>
               </li>
               <li>
-                <span className="text-gray-400 text-sm flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  Hackathon Build v2.4
-                </span>
-              </li>
-              <li>
                 <Link href="/auth/login" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
                   Account Sign In
                 </Link>
