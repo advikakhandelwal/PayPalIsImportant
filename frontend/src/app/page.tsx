@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 
 export default function HomePage() {
-  const { activeRole, setActiveRole, toggleRole } = useAuth();
+  const { activeRole, setActiveRole, toggleRole, isHydrated } = useAuth();
   const { activeContract } = useMarketplace();
 
   const escrowStatusInfo = getEscrowStatusInfo(activeContract.escrowStatus);
@@ -211,10 +211,10 @@ export default function HomePage() {
             {/* Freelancer Portal Card */}
             <div
               className={`group relative p-8 sm:p-10 rounded-3xl border bg-gray-50/50 card-hover transition-all ${
-                activeRole === "FREELANCER" ? "border-[#0070E0] ring-2 ring-[#0070E0]/20 bg-blue-50/10" : "border-gray-100"
+                isHydrated && activeRole === "FREELANCER" ? "border-[#0070E0] ring-2 ring-[#0070E0]/20 bg-blue-50/10" : "border-gray-100"
               }`}
             >
-              {activeRole === "FREELANCER" && (
+              {isHydrated && activeRole === "FREELANCER" && (
                 <div className="absolute top-6 right-8">
                   <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
                     Active
@@ -267,10 +267,10 @@ export default function HomePage() {
             {/* Client Portal Card */}
             <div
               className={`group relative p-8 sm:p-10 rounded-3xl border bg-gray-50/50 card-hover transition-all ${
-                activeRole === "CLIENT" ? "border-[#003087] ring-2 ring-[#003087]/20 bg-blue-50/10" : "border-gray-100"
+                isHydrated && activeRole === "CLIENT" ? "border-[#003087] ring-2 ring-[#003087]/20 bg-blue-50/10" : "border-gray-100"
               }`}
             >
-              {activeRole === "CLIENT" && (
+              {isHydrated && activeRole === "CLIENT" && (
                 <div className="absolute top-6 right-8">
                   <span className="px-3 py-1 rounded-full bg-blue-100 text-[#003087] text-[10px] font-bold uppercase tracking-wider">
                     Active

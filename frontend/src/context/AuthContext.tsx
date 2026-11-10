@@ -1,8 +1,39 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useState, useEffect } from "react";
 import { UserProfile, UserRole } from "@/types";
 import { SAMPLE_FREELANCER, SAMPLE_CLIENT } from "@/lib/mockData";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// localStorage helpers (SSR-safe)
+// ─────────────────────────────────────────────────────────────────────────────
+const LS_USER = "tp_demo_user";
+const LS_ROLE = "tp_demo_role";
+const LS_AUTH = "tp_demo_auth";
+
+function readLS<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLS<T>(key: string, value: T): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // quota exceeded – silently ignore in demo mode
+  }
+}
+
+function removeLS(key: string): void {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.removeItem(key); } catch { /* ignore */ }
+}
 
 interface AuthContextType {
   currentUser: UserProfile;
@@ -14,14 +45,58 @@ interface AuthContextType {
   signup: (name: string, email: string, role: UserRole) => void;
   updateProfile: (profileData: Partial<UserProfile>) => void;
   logout: () => void;
+  isHydrated: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Deterministic initial state identical on SSR and initial client render
   const [activeRole, setActiveRoleState] = useState<UserRole>("FREELANCER");
   const [currentUser, setCurrentUser] = useState<UserProfile>(SAMPLE_FREELANCER);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [isHydrated, setIsHydrated] = useState<boolean>(false);
+
+  // 1. Restore persisted state from localStorage only after client mounting
+  useEffect(() => {
+    try {
+      const savedRole = readLS<UserRole | null>(LS_ROLE, null);
+      const savedUser = readLS<UserProfile | null>(LS_USER, null);
+      const savedAuth = readLS<boolean | null>(LS_AUTH, null);
+
+      if (savedRole === "CLIENT" || savedRole === "FREELANCER") {
+        setActiveRoleState(savedRole);
+      }
+      if (savedUser && savedUser.id) {
+        setCurrentUser(savedUser);
+      } else if (savedRole === "CLIENT") {
+        setCurrentUser(SAMPLE_CLIENT);
+      }
+      if (savedAuth !== null) {
+        setIsAuthenticated(savedAuth);
+      }
+    } catch {
+      // Safe fallback in demo mode
+    } finally {
+      setIsHydrated(true);
+    }
+  }, []);
+
+  // 2. Persist auth state changes to localStorage only after hydration has completed
+  useEffect(() => {
+    if (!isHydrated) return;
+    writeLS(LS_USER, currentUser);
+  }, [currentUser, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    writeLS(LS_ROLE, activeRole);
+  }, [activeRole, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    writeLS(LS_AUTH, isAuthenticated);
+  }, [isAuthenticated, isHydrated]);
 
   const setActiveRole = (role: UserRole) => {
     setActiveRoleState(role);
@@ -96,6 +171,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     setIsAuthenticated(false);
+    // Clear persisted demo session so the next visit starts fresh
+    removeLS(LS_USER);
+    removeLS(LS_ROLE);
+    removeLS(LS_AUTH);
   };
 
   return (
@@ -110,6 +189,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signup,
         updateProfile,
         logout,
+        isHydrated,
       }}
     >
       {children}

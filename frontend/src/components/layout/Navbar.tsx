@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -12,8 +12,12 @@ import {
   ArrowRight,
   LayoutDashboard,
   ArrowRightLeft,
+  Bell,
+  Check,
+  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useNotifications } from "@/context/NotificationContext";
 import { UserRole } from "@/types";
 
 const LANDING_NAV = [
@@ -27,13 +31,29 @@ const LANDING_NAV = [
 type SectionId = (typeof LANDING_NAV)[number]["id"];
 
 export const Navbar: React.FC = () => {
-  const { activeRole, setActiveRole } = useAuth();
+  const { currentUser, activeRole, setActiveRole, isHydrated } = useAuth();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const pathname = usePathname();
   const router = useRouter();
   const isLandingPage = pathname === "/";
 
   const [activeSection, setActiveSection] = useState<SectionId>("home");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  // Close notifications dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+      }
+    };
+    if (notifOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [notifOpen]);
 
   const activeDashboardHref =
     activeRole === "FREELANCER" ? "/freelancer/dashboard" : "/client/dashboard";
@@ -173,24 +193,114 @@ export const Navbar: React.FC = () => {
 
           {/* Right Controls: Back to Dashboard, Account Switcher, Auth */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* 1. Back to Dashboard Button */}
-            <Link
-              href={activeDashboardHref}
-              className="flex items-center gap-2 bg-blue-50 hover:bg-blue-100/80 text-[#0070E0] px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all border border-blue-200/60 shadow-xs group cursor-pointer"
-            >
-              <LayoutDashboard className="w-3.5 h-3.5 text-[#0070E0]" />
-              <span className="whitespace-nowrap">Back to Dashboard</span>
-            </Link>
+            {isHydrated ? (
+              <>
+                {/* 1. Back to Dashboard Button */}
+                <Link
+                  href={activeDashboardHref}
+                  className="flex items-center gap-2 bg-blue-50 hover:bg-blue-100/80 text-[#0070E0] px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all border border-blue-200/60 shadow-xs group cursor-pointer"
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5 text-[#0070E0]" />
+                  <span className="whitespace-nowrap">Back to Dashboard</span>
+                </Link>
 
-            {/* 2. Switch Account Button (for dual-role users) */}
-            <button
-              onClick={handleSwitchAccount}
-              className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-gray-600 hover:text-[#003087] bg-gray-50 hover:bg-gray-100 px-3 py-2 rounded-full border border-gray-200 transition-all cursor-pointer whitespace-nowrap shadow-2xs"
-              title={`Switch to ${otherRoleLabel} account`}
-            >
-              <ArrowRightLeft className="w-3.5 h-3.5 text-[#0070E0]" />
-              <span>Switch to {otherRoleLabel}</span>
-            </button>
+                {/* 2. Switch Account Button (for dual-role users) */}
+                <button
+                  onClick={handleSwitchAccount}
+                  className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-gray-600 hover:text-[#003087] bg-gray-50 hover:bg-gray-100 px-3 py-2 rounded-full border border-gray-200 transition-all cursor-pointer whitespace-nowrap shadow-2xs"
+                  title={`Switch to ${otherRoleLabel} account`}
+                >
+                  <ArrowRightLeft className="w-3.5 h-3.5 text-[#0070E0]" />
+                  <span>Switch to {otherRoleLabel}</span>
+                </button>
+
+                {/* 3. Global Notification Bell with Dropdown */}
+                <div className="relative" ref={notifRef}>
+                  <button
+                    onClick={() => setNotifOpen((prev) => !prev)}
+                    className="relative p-2 rounded-full text-gray-600 hover:text-[#003087] hover:bg-gray-100 transition-colors cursor-pointer"
+                    aria-label="View notifications"
+                    title="Notifications"
+                  >
+                    <Bell className="w-5 h-5 text-gray-700 hover:text-[#003087]" />
+                    {unreadCount > 0 && (
+                      <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white shadow-xs">
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Dropdown Panel */}
+                  {notifOpen && (
+                    <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white shadow-2xl border border-gray-100 p-3 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                      <div className="flex items-center justify-between pb-2 border-b border-gray-100 px-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-[#003087]">Notifications</span>
+                          {unreadCount > 0 && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-100 text-[#0070E0] rounded-full">
+                              {unreadCount} new
+                            </span>
+                          )}
+                        </div>
+                        {unreadCount > 0 && (
+                          <button
+                            onClick={markAllAsRead}
+                            className="text-[11px] font-semibold text-[#0070E0] hover:underline cursor-pointer"
+                          >
+                            Mark all read
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto my-1">
+                        {notifications.length === 0 ? (
+                          <div className="py-8 text-center text-gray-400 text-xs">
+                            No notifications yet
+                          </div>
+                        ) : (
+                          notifications.slice(0, 5).map((n) => (
+                            <Link
+                              key={n.id}
+                              href={n.linkHref || "/notifications"}
+                              onClick={() => {
+                                markAsRead(n.id);
+                                setNotifOpen(false);
+                              }}
+                              className={`block p-2.5 rounded-xl transition-colors hover:bg-gray-50 ${
+                                !n.isRead ? "bg-blue-50/40" : ""
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <p className={`text-xs font-bold line-clamp-1 ${!n.isRead ? "text-[#003087]" : "text-gray-800"}`}>
+                                  {n.title}
+                                </p>
+                                {!n.isRead && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-[#0070E0] shrink-0 mt-1" />
+                                )}
+                              </div>
+                              <p className="text-[11px] text-gray-500 line-clamp-2 mt-0.5 leading-normal">
+                                {n.description}
+                              </p>
+                            </Link>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="pt-2 border-t border-gray-100 text-center">
+                        <Link
+                          href="/notifications"
+                          onClick={() => setNotifOpen(false)}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-[#0070E0] hover:text-[#003087] transition-colors py-1"
+                        >
+                          <span>Open Notification Centre</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : null}
 
             {/* 3. Auth Buttons */}
             <Link
@@ -243,21 +353,38 @@ export const Navbar: React.FC = () => {
               })}
 
               <div className="pt-4 border-t border-gray-100 flex flex-col gap-2">
-                <Link
-                  href={activeDashboardHref}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-[#0070E0] bg-blue-50 border border-blue-200 rounded-full"
-                >
-                  <LayoutDashboard className="w-4 h-4" />
-                  Back to Dashboard
-                </Link>
+                {isHydrated && (
+                  <>
+                    <Link
+                      href={activeDashboardHref}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-[#0070E0] bg-blue-50 border border-blue-200 rounded-full"
+                    >
+                      <LayoutDashboard className="w-4 h-4" />
+                      Back to Dashboard
+                    </Link>
 
-                <button
-                  onClick={handleSwitchAccount}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-full cursor-pointer hover:bg-gray-100"
-                >
-                  <ArrowRightLeft className="w-4 h-4 text-[#0070E0]" />
-                  Switch to {otherRoleLabel} Account
-                </button>
+                    <Link
+                      href="/notifications"
+                      className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-full cursor-pointer hover:bg-gray-100"
+                    >
+                      <Bell className="w-4 h-4 text-[#0070E0]" />
+                      <span>Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="px-2 py-0.5 text-xs font-bold bg-rose-500 text-white rounded-full">
+                          {unreadCount}
+                        </span>
+                      )}
+                    </Link>
+
+                    <button
+                      onClick={handleSwitchAccount}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-full cursor-pointer hover:bg-gray-100"
+                    >
+                      <ArrowRightLeft className="w-4 h-4 text-[#0070E0]" />
+                      Switch to {otherRoleLabel} Account
+                    </button>
+                  </>
+                )}
 
                 <div className="grid grid-cols-2 gap-2 pt-2">
                   <Link

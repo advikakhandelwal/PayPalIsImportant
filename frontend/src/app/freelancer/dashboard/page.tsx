@@ -30,6 +30,7 @@ import {
   X,
   Send,
   ShieldCheck,
+  ShieldAlert,
   Layers,
   Filter,
   DollarSign,
@@ -41,6 +42,8 @@ import {
   RotateCcw,
   Check,
   Building,
+  History,
+  ChevronDown,
 } from "lucide-react";
 
 type FreelancerTab = "overview" | "projects" | "applications" | "contracts" | "profile" | "scorecard";
@@ -49,9 +52,26 @@ function FreelancerDashboardContent() {
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as FreelancerTab) || "overview";
 
-  const { currentUser, updateProfile } = useAuth();
-  const { projects, applications, activeContract, submitApplication, submitDeliverable } = useMarketplace();
+  const { currentUser, activeRole, setActiveRole, updateProfile, isHydrated } = useAuth();
+  const {
+    projects,
+    applications,
+    contracts,
+    activeContract,
+    submitApplication,
+    submitDeliverable,
+  } = useMarketplace();
 
+  // Frontend UI route guard: show access-denied state if wrong role
+  const isFreelancerRole = activeRole === "FREELANCER" || currentUser.role === "FREELANCER";
+
+  // Multi-contract representation for freelancer
+  const myContracts = contracts.filter(
+    (c) => c.freelancerId === currentUser.id || c.freelancerName === currentUser.name
+  );
+  const [selectedContractId, setSelectedContractId] = useState<string>("");
+  const selectedContractForTab =
+    myContracts.find((c) => c.id === selectedContractId) ?? myContracts[0] ?? activeContract;
   const [activeTab, setActiveTab] = useState<FreelancerTab>(initialTab);
 
   // Sync tab if URL param changes
@@ -81,9 +101,19 @@ function FreelancerDashboardContent() {
   // Deliverable Submission Modal State
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [targetMilestoneId, setTargetMilestoneId] = useState<string>("");
+  const [isResubmission, setIsResubmission] = useState<boolean>(false);
   const [submissionUrl, setSubmissionUrl] = useState("");
   const [submissionNotes, setSubmissionNotes] = useState("");
+  const [submissionError, setSubmissionError] = useState("");
   const [submissionSuccessMsg, setSubmissionSuccessMsg] = useState("");
+  const [expandedHistoryMilestoneIds, setExpandedHistoryMilestoneIds] = useState<string[]>([]);
+
+  const toggleHistory = (msId: string) => {
+    setExpandedHistoryMilestoneIds((prev) =>
+      prev.includes(msId) ? prev.filter((id) => id !== msId) : [...prev, msId]
+    );
+  };
+  const isHistoryExpanded = (msId: string) => expandedHistoryMilestoneIds.includes(msId);
 
   // Profile Edit State
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -93,7 +123,7 @@ function FreelancerDashboardContent() {
   const [profileSuccessMsg, setProfileSuccessMsg] = useState("");
 
   const isUnrated = currentUser.isNewMember || currentUser.trustScorecard.completedProjects === 0;
-  const escrowStatusInfo = getEscrowStatusInfo(activeContract.escrowStatus);
+  const escrowStatusInfo = getEscrowStatusInfo(selectedContractForTab.escrowStatus);
 
   // Filter only OPEN marketplace projects (excluding any project created by the current user)
   const openMarketplaceProjects = useMemo(() => {
@@ -239,43 +269,63 @@ function FreelancerDashboardContent() {
     }, 1500);
   };
 
-  // Handle Deliverable Submit
-  const handleOpenSubmitModal = (milestoneId: string) => {
+  // Handle Deliverable Submit & Resubmit
+  const handleOpenSubmitModal = (milestoneId: string, isResubmit = false) => {
     setTargetMilestoneId(milestoneId);
+    setIsResubmission(isResubmit);
     setSubmissionUrl("");
     setSubmissionNotes("");
+    setSubmissionError("");
     setSubmissionSuccessMsg("");
     setIsSubmitModalOpen(true);
   };
 
   const handleConfirmDeliverableSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!submissionUrl.trim()) return;
+    setSubmissionError("");
+    if (!submissionUrl.trim()) {
+      setSubmissionError("Deliverable URL or repository link is required.");
+      return;
+    }
+    if (!submissionNotes.trim()) {
+      setSubmissionError(isResubmission ? "Please provide notes detailing what corrections were made." : "Submission notes are required.");
+      return;
+    }
+
+    const targetMs = selectedContractForTab.milestones.find((m) => m.id === targetMilestoneId);
+    const existingHistory = targetMs?.submissionHistory || (targetMs?.submission ? [targetMs.submission] : []);
+    const nextRevisionNum = isResubmission ? existingHistory.length + 1 : 1;
 
     const newSubmission: DeliverableSubmission = {
-      id: `sub-${Date.now()}`,
+      id: "sub-" + Date.now(),
       milestoneId: targetMilestoneId,
       submissionType: "URL",
       submissionUrl: submissionUrl.trim(),
-      notes: submissionNotes.trim() || "Work submitted for milestone review.",
+      notes: submissionNotes.trim(),
       submittedAt: new Date().toISOString(),
+      revisionNumber: nextRevisionNum,
+      reviewStatus: "IN_REVIEW",
       aiVerificationReport: {
-        overallScore: 94,
+        overallScore: isResubmission ? 96 : 94,
         qualityGrade: "A",
         checklist: [
           { criterion: "Deliverable URL accessible", passed: true, evidenceNotes: "Link verified active" },
-          { criterion: "Core specification fulfilled", passed: true, evidenceNotes: "Requirements met" },
+          { criterion: "Core requirements addressed", passed: true, evidenceNotes: isResubmission ? "Client punch-list items fulfilled" : "Requirements met" },
           { criterion: "Zero sensitive token leaks", passed: true, evidenceNotes: "Code scan clear" },
         ],
         missingRequirements: [],
-        feedbackNotes: "Advisory score generated. Human client sign-off required for milestone release.",
+        feedbackNotes: isResubmission ? "Resubmission advisory check completed. Client review required." : "Advisory score generated. Human client sign-off required for milestone release.",
         evaluatedAt: new Date().toISOString(),
         isAdvisoryOnly: true,
       },
     };
 
-    submitDeliverable(activeContract.id, targetMilestoneId, newSubmission);
-    setSubmissionSuccessMsg("Deliverable uploaded successfully! Milestone is now 'In Review'.");
+    submitDeliverable(selectedContractForTab.id, targetMilestoneId, newSubmission);
+    setSubmissionSuccessMsg(
+      isResubmission
+        ? "Revision #" + nextRevisionNum + " resubmitted successfully! Milestone is now In Review."
+        : "Deliverable uploaded successfully! Milestone is now In Review."
+    );
     setTimeout(() => {
       setIsSubmitModalOpen(false);
       setSubmissionSuccessMsg("");
@@ -300,6 +350,40 @@ function FreelancerDashboardContent() {
     setIsEditingProfile(false);
     setTimeout(() => setProfileSuccessMsg(""), 3000);
   };
+
+  if (!isFreelancerRole) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+        <Card className="p-8 border-slate-200 bg-white shadow-sm rounded-2xl space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <Badge variant="warning" size="md">Freelancer Workspace Restricted</Badge>
+          <h2 className="text-xl font-bold text-slate-900">Active Role is Client</h2>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            You are currently signed in with a Client profile. To browse open projects, submit proposals, and deliver milestones as a freelancer, switch to Freelancer mode or continue to the Client Dashboard.
+          </p>
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link href="/client/dashboard">
+              <Button variant="outline" size="sm">
+                Go to Client Dashboard
+              </Button>
+            </Link>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setActiveRole("FREELANCER")}
+            >
+              Switch to Freelancer Mode
+            </Button>
+          </div>
+          <p className="text-[11px] text-slate-400 pt-2">
+            Demo notice: Frontend role guard active. Real authorization is enforced by the authentication backend.
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -471,11 +555,11 @@ function FreelancerDashboardContent() {
             <CardContent className="space-y-4">
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h4 className="font-bold text-sm text-slate-900">{activeContract.projectTitle}</h4>
+                  <h4 className="font-bold text-sm text-slate-900">{selectedContractForTab.projectTitle}</h4>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Client: <strong className="text-slate-800">{activeContract.clientName}</strong> • Released:{" "}
+                    Client: <strong className="text-slate-800">{selectedContractForTab.clientName}</strong> • Released:{" "}
                     <span className="text-emerald-600 font-semibold">
-                      {formatCurrency(activeContract.releasedAmount, activeContract.currency)}
+                      {formatCurrency(selectedContractForTab.releasedAmount, selectedContractForTab.currency)}
                     </span>{" "}
                     / Total: {formatCurrency(activeContract.totalBudget, activeContract.currency)}
                   </p>
@@ -967,7 +1051,15 @@ function FreelancerDashboardContent() {
 
                   {app.status === "ACCEPTED" && (
                     <div className="pt-2 flex justify-end">
-                      <Button variant="primary" size="sm" onClick={() => setActiveTab("contracts")}>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => {
+                          const matching = myContracts.find((c) => c.projectId === app.projectId);
+                          if (matching) setSelectedContractId(matching.id);
+                          setActiveTab("contracts");
+                        }}
+                      >
                         Open Active Escrow Contract
                         <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                       </Button>
@@ -1005,21 +1097,64 @@ function FreelancerDashboardContent() {
             </Badge>
           </div>
 
+          {/* Multi-contract selector for freelancer */}
+          {myContracts.length > 1 && (
+            <Card className="border-slate-200 bg-white p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <span className="text-xs font-bold text-slate-700 shrink-0">Select Escrow Contract:</span>
+                <select
+                  value={selectedContractId || selectedContractForTab.id}
+                  onChange={(e) => setSelectedContractId(e.target.value)}
+                  className="flex-1 h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-paypal-blue"
+                >
+                  {myContracts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.projectTitle} — Client: {c.clientName} ({c.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </Card>
+          )}
+
+          {myContracts.length === 0 && (
+            <div className="p-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
+              <Lock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold">No active contracts found.</p>
+              <p className="text-xs text-slate-400 mt-1">
+                When a client accepts your application, an active milestone escrow contract will appear here automatically.
+              </p>
+              <Button variant="primary" size="sm" className="mt-4" onClick={() => setActiveTab("projects")}>
+                Browse Marketplace Projects
+              </Button>
+            </div>
+          )}
+
+          {myContracts.length > 0 && (
           <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <CardTitle>{activeContract.projectTitle}</CardTitle>
+                  <CardTitle>{selectedContractForTab.projectTitle}</CardTitle>
                   <CardDescription>
-                    Client: <strong className="text-slate-800">{activeContract.clientName}</strong> • Contract ID:{" "}
-                    <code className="text-xs font-mono">{activeContract.id}</code>
+                    Client: <strong className="text-slate-800">{selectedContractForTab.clientName}</strong> • Contract ID:{" "}
+                    <code className="text-xs font-mono">{selectedContractForTab.id}</code>
                   </CardDescription>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs text-slate-500">Contract Value</span>
-                  <p className="text-xl font-bold text-paypal-dark">
-                    {formatCurrency(activeContract.totalBudget, activeContract.currency)}
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="text-right">
+                    <span className="text-xs text-slate-500">Contract Value</span>
+                    <p className="text-xl font-bold text-paypal-dark">
+                      {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
+                    </p>
+                  </div>
+                  <Link
+                    href={`/client/disputes/${selectedContractForTab.id}`}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-2xs"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Dispute Workspace</span>
+                  </Link>
                 </div>
               </div>
             </CardHeader>
@@ -1029,19 +1164,19 @@ function FreelancerDashboardContent() {
                 <div>
                   <span className="text-xs text-slate-500 block">Funds Held in Escrow</span>
                   <span className="text-lg font-bold text-slate-900">
-                    {formatCurrency(activeContract.heldInEscrowAmount, activeContract.currency)}
+                    {formatCurrency(selectedContractForTab.heldInEscrowAmount, selectedContractForTab.currency)}
                   </span>
                 </div>
                 <div>
                   <span className="text-xs text-slate-500 block">Released Payouts</span>
                   <span className="text-lg font-bold text-emerald-600">
-                    {formatCurrency(activeContract.releasedAmount, activeContract.currency)}
+                    {formatCurrency(selectedContractForTab.releasedAmount, selectedContractForTab.currency)}
                   </span>
                 </div>
                 <div>
                   <span className="text-xs text-slate-500 block">Settlement Rate</span>
                   <span className="text-lg font-bold text-paypal-blue">
-                    {Math.round((activeContract.releasedAmount / activeContract.totalBudget) * 100)}%
+                    {Math.round((selectedContractForTab.releasedAmount / selectedContractForTab.totalBudget) * 100)}%
                   </span>
                 </div>
               </div>
@@ -1053,7 +1188,7 @@ function FreelancerDashboardContent() {
                 </h3>
 
                 <div className="space-y-4">
-                  {activeContract.milestones.map((ms) => {
+                  {selectedContractForTab.milestones.map((ms) => {
                     const statusInfo = getMilestoneStatusInfo(ms.status);
                     return (
                       <div
@@ -1136,6 +1271,7 @@ function FreelancerDashboardContent() {
               </div>
             </CardContent>
           </Card>
+          )}
         </div>
       )}
 

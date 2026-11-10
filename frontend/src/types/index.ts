@@ -64,6 +64,8 @@ export interface Milestone {
   deadline: string; // ISO date string
   status: MilestoneStatus;
   submission?: DeliverableSubmission;
+  submissionHistory?: DeliverableSubmission[];
+  latestRevisionRequest?: RevisionRequest;
 }
 
 export type ProjectStatus = 'OPEN' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
@@ -117,6 +119,15 @@ export interface Application {
 // ==========================================
 // 5. Deliverable & Advisory AI Verification Types
 // ==========================================
+export interface RevisionRequest {
+  id: string;
+  feedback: string;
+  specificCorrections?: string;
+  additionalInstructions?: string;
+  requestedAt: string;
+  requestedBy: string;
+}
+
 export interface DeliverableSubmission {
   id: string;
   milestoneId: string;
@@ -125,6 +136,9 @@ export interface DeliverableSubmission {
   fileName?: string;
   notes: string;
   submittedAt: string;
+  revisionNumber?: number;
+  reviewStatus?: 'IN_REVIEW' | 'APPROVED' | 'REVISION_REQUESTED';
+  revisionRequest?: RevisionRequest;
   // Advisory AI Verification (Human Client must approve/reject)
   aiVerificationReport?: AIVerificationReport;
 }
@@ -174,28 +188,146 @@ export interface EscrowContract {
   dispute?: DisputeCase;
 }
 
+export type DisputeStatus =
+  | 'UNDER_REVIEW'
+  | 'AI_RECOMMENDATION_READY'
+  | 'AWAITING_CLIENT_APPROVAL'
+  | 'AWAITING_FREELANCER_APPROVAL'
+  | 'NEGOTIATION_ACTIVE'
+  | 'NEGOTIATION_FAILED'
+  | 'AWAITING_FINAL_SETTLEMENT'
+  | 'AWAITING_FREELANCER_ACCEPTANCE'
+  | 'RESOLVED';
+
+export type DisputeSettlementCase =
+  | 'CASE_1_MUTUAL_AI_APPROVAL'
+  | 'CASE_2_CLIENT_LOWER_OFFER'
+  | 'CASE_3_FREELANCER_RAISE_OFFER';
+
+export interface NegotiationEntry {
+  id: string;
+  offeredBy: UserRole;
+  offeredByName: string;
+  amount: number;
+  currency: string;
+  reason: string;
+  timestamp: string;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'COUNTERED';
+}
+
+export interface AIDisputeRecommendation {
+  clientAmount: number;
+  freelancerAmount: number;
+  currency: string;
+  explanation: string;
+  evidence: string[];
+  completedWorkBreakdown: string;
+  disputedWorkBreakdown: string;
+  confidenceScore: number;
+  generatedAt: string;
+  isAdvisoryOnly: true;
+}
+
+export interface FinalSettlement {
+  freelancerAmount: number;
+  clientAmount: number;
+  currency: string;
+  notes: string;
+  proposedBy: UserRole;
+  proposedAt: string;
+  acceptedByFreelancer?: boolean;
+  acceptedAt?: string;
+  status: 'PROPOSED' | 'ACCEPTED' | 'REJECTED';
+}
+
+export type DisputeCategory =
+  | 'QUALITY_DEFICIENCY'
+  | 'MISSED_DEADLINE'
+  | 'SCOPE_CREEP'
+  | 'UNRESPONSIVE_COMMUNICATION'
+  | 'SPECIFICATION_MISALIGNMENT'
+  | 'OTHER';
+
 export interface DisputeCase {
   id: string;
   contractId: string;
-  milestoneId: string;
+  projectId: string;
+  clientId: string;
+  clientName: string;
+  freelancerId: string;
+  freelancerName: string;
+  freelancerEmail?: string;
   initiatorRole: UserRole;
   initiatorName: string;
   reason: string;
+  category: DisputeCategory;
+  explanation: string;
+  expectedResolution: string;
   evidenceNotes: string;
-  status: 'OPEN' | 'IN_HUMAN_REVIEW' | 'RESOLVED';
+  evidenceLinks?: string[];
+  milestoneId?: string;
+  milestoneTitle?: string;
+  status: DisputeStatus;
+  activeCase?: DisputeSettlementCase;
+  clientApprovedAI?: boolean;
+  freelancerApprovedAI?: boolean;
+  negotiationHistory: NegotiationEntry[];
+  freelancerCounteroffersUsed: number;
+  clientCounteroffersUsed: number;
+  aiRecommendation?: AIDisputeRecommendation;
+  finalSettlement?: FinalSettlement;
+  resolution?: {
+    freelancerAmount: number;
+    clientAmount: number;
+    currency: string;
+    resolvedAt: string;
+    resolvedBy: 'MUTUAL_AI_APPROVAL' | 'NEGOTIATION' | 'MUTUAL_AGREEMENT' | 'FINAL_SETTLEMENT' | 'OFFLINE_SETTLEMENT';
+    notes?: string;
+    talentPayout?: number;
+    clientRefund?: number;
+  };
   createdAt: string;
-  // AI-assisted split suggestion (Advisory only - Final resolution requires human consensus)
+  updatedAt: string;
   aiAdvisoryRecommendation?: {
     suggestedTalentPayoutPercentage: number;
     suggestedClientRefundPercentage: number;
     rationale: string;
     confidenceScore: number;
   };
-  resolution?: {
-    talentPayout: number;
-    clientRefund: number;
-    currency: string;
-    resolvedAt: string;
-    resolvedBy: 'MUTUAL_AGREEMENT' | 'HUMAN_ARBITRATOR';
-  };
+}
+
+// ==========================================
+// 7. Global Notification Types
+// ==========================================
+export type NotificationEvent =
+  | 'NEW_APPLICATION'
+  | 'DELIVERABLE_SUBMITTED'
+  | 'DELIVERABLE_RESUBMITTED'
+  | 'REVISION_REQUESTED'
+  | 'MILESTONE_APPROVED'
+  | 'APPLICATION_ACCEPTED'
+  | 'APPLICATION_REJECTED'
+  | 'CONTRACT_ACTIVATED'
+  | 'DISPUTE_RAISED'
+  | 'AI_RECOMMENDATION_READY'
+  | 'SETTLEMENT_PROPOSED'
+  | 'COUNTEROFFER_RECEIVED'
+  | 'NEGOTIATION_FAILED'
+  | 'FINAL_SETTLEMENT_SUBMITTED'
+  | 'SETTLEMENT_ACCEPTED'
+  | 'DISPUTE_RESOLVED'
+  | 'GENERAL';
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  userRole: UserRole | 'ALL';
+  event: NotificationEvent;
+  title: string;
+  description: string;
+  linkHref?: string;
+  isRead: boolean;
+  isDismissed: boolean;
+  createdAt: string;
+  entityId?: string;
 }

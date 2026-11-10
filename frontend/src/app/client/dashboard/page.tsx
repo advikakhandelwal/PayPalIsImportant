@@ -25,6 +25,7 @@ import {
   Sparkles,
   ExternalLink,
   ShieldCheck,
+  ShieldAlert,
   AlertCircle,
   Edit3,
   X,
@@ -38,6 +39,8 @@ import {
   DollarSign,
   Calendar,
   Check,
+  History,
+  ChevronDown,
 } from "lucide-react";
 
 type ClientTab = "overview" | "projects" | "post" | "proposals" | "contracts" | "profile" | "details";
@@ -71,16 +74,23 @@ function ClientDashboardContent() {
   const initialTab = (searchParams.get("tab") as ClientTab) || "overview";
   const initialProjectId = searchParams.get("id") || "";
 
-  const { currentUser, updateProfile } = useAuth();
+  const { currentUser, activeRole, setActiveRole, updateProfile, isHydrated } = useAuth();
   const {
     projects,
     applications,
+    contracts,
     activeContract,
     createProject,
     updateProject,
+    acceptApplication,
+    rejectApplication,
     approveMilestone,
     requestMilestoneRevision,
   } = useMarketplace();
+
+  // Frontend UI route guard: show access-denied state if wrong role.
+  // NOTE: This is demo-only UI filtering. Real security lives in the backend.
+  const isClientRole = activeRole === 'CLIENT' || currentUser.role === 'CLIENT';
 
   const [activeTab, setActiveTab] = useState<ClientTab>(initialTab);
   const [selectedProjectId, setSelectedProjectId] = useState<string>(initialProjectId);
@@ -146,15 +156,16 @@ function ClientDashboardContent() {
   const [postSuccess, setPostSuccess] = useState("");
   const [isPublishing, setIsPublishing] = useState(false);
 
+
   // Proposals Filter State
   const [proposalFilter, setProposalFilter] = useState<"ALL" | "AI_SHORTLIST">("ALL");
-  const [localApplications, setLocalApplications] = useState<Application[]>(applications);
   const [filterByProjectId, setFilterByProjectId] = useState<string>("ALL");
 
-  useEffect(() => {
-    setLocalApplications(applications);
-  }, [applications]);
-
+  // Ownership-filtered applications: only for this client's own projects
+  const myProjectIds = projects
+    .filter((p) => p.clientId === currentUser.id)
+    .map((p) => p.id);
+  const localApplications = applications.filter((a) => myProjectIds.includes(a.projectId));
   // Request Revision Modal State
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [revisionMilestoneId, setRevisionMilestoneId] = useState<string>("");
@@ -169,7 +180,13 @@ function ClientDashboardContent() {
   const [industry, setIndustry] = useState(currentUser.domain || "Fintech & Autonomous Commerce");
   const [profileSuccessMsg, setProfileSuccessMsg] = useState("");
 
-  const escrowStatusInfo = getEscrowStatusInfo(activeContract.escrowStatus);
+  // Contracts filtered for this client
+  const myContracts = contracts.filter((c) => c.clientId === currentUser.id);
+  // For the contracts tab: use a selected contract (default to first owned one)
+  const [selectedContractId, setSelectedContractId] = useState<string>("");
+  const selectedContractForTab =
+    myContracts.find((c) => c.id === selectedContractId) ?? myContracts[0] ?? activeContract;
+  const escrowStatusInfo = getEscrowStatusInfo(selectedContractForTab.escrowStatus);
 
   // Metrics Calculations for Dashboard Overview
   const totalProjectsCount = projects.length;
@@ -417,23 +434,21 @@ function ClientDashboardContent() {
     setActiveTab("proposals");
   };
 
-  // Candidate review handlers
+  // Candidate review handlers (wired to shared MarketplaceContext)
   const handleAcceptCandidate = (appId: string) => {
-    setLocalApplications((prev) =>
-      prev.map((a) => (a.id === appId ? { ...a, status: "ACCEPTED" } : a))
-    );
-    setActionSuccessMsg("Candidate accepted! Milestone escrow contract agreement activated.");
-    setTimeout(() => setActionSuccessMsg(""), 3500);
+    acceptApplication(appId, currentUser.id);
+    setActionSuccessMsg('Candidate accepted! Demo escrow contract record created. Contract now visible to both parties.');
+    setTimeout(() => setActionSuccessMsg(""), 4000);
   };
 
   const handleDeclineCandidate = (appId: string) => {
-    setLocalApplications((prev) =>
-      prev.map((a) => (a.id === appId ? { ...a, status: "REJECTED" } : a))
-    );
+    rejectApplication(appId, currentUser.id);
+    setActionSuccessMsg("Candidate declined.");
+    setTimeout(() => setActionSuccessMsg(""), 2500);
   };
 
   const handleApproveMilestone = (milestoneId: string) => {
-    approveMilestone(activeContract.id, milestoneId);
+    approveMilestone(selectedContractForTab.id, milestoneId);
     setActionSuccessMsg("Milestone approved! Payout released from escrow to talent.");
     setTimeout(() => setActionSuccessMsg(""), 3500);
   };
@@ -448,7 +463,7 @@ function ClientDashboardContent() {
     e.preventDefault();
     if (!revisionNotes.trim()) return;
 
-    requestMilestoneRevision(activeContract.id, revisionMilestoneId, revisionNotes.trim());
+    requestMilestoneRevision(selectedContractForTab.id, revisionMilestoneId, revisionNotes.trim());
     setIsRevisionModalOpen(false);
     setActionSuccessMsg("Revision request with feedback sent to talent.");
     setTimeout(() => setActionSuccessMsg(""), 3500);
@@ -478,6 +493,40 @@ function ClientDashboardContent() {
 
   // Active Project for Details View
   const selectedProject = projects.find((p) => p.id === selectedProjectId) || projects[0];
+
+  if (!isClientRole) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+        <Card className="p-8 border-gray-200 bg-white shadow-sm rounded-3xl space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <Badge variant="warning" size="md">Client Workspace Restricted</Badge>
+          <h2 className="text-xl font-bold text-gray-950">Active Role is Freelancer</h2>
+          <p className="text-xs text-gray-500 max-w-md mx-auto">
+            You are currently signed in with a Freelancer profile. To access client project creation, applicant inbox, and milestone escrow management, switch to Client mode or continue to the Freelancer Workspace.
+          </p>
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link href="/freelancer/dashboard">
+              <Button variant="outline" size="sm">
+                Go to Freelancer Workspace
+              </Button>
+            </Link>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setActiveRole("CLIENT")}
+            >
+              Switch to Client Mode
+            </Button>
+          </div>
+          <p className="text-[11px] text-gray-400 pt-2">
+            Demo notice: Frontend role guard active. Real authorization is enforced by the authentication backend.
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -1812,43 +1861,81 @@ function ClientDashboardContent() {
             </Badge>
           </div>
 
+          {/* Contract Selector – shown when client has multiple contracts */}
+          {myContracts.length > 1 && (
+            <Card className="border-gray-100 bg-white p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <span className="text-xs font-bold text-gray-700 shrink-0">Select Contract:</span>
+                <select
+                  value={selectedContractId || selectedContractForTab.id}
+                  onChange={(e) => setSelectedContractId(e.target.value)}
+                  className="flex-1 h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                >
+                  {myContracts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.projectTitle} — {c.freelancerName} ({c.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </Card>
+          )}
+
+          {myContracts.length === 0 && (
+            <div className="p-12 text-center text-gray-500 bg-white rounded-2xl border border-gray-100">
+              <Lock className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold">No active contracts yet.</p>
+              <p className="text-xs text-gray-400 mt-1">Accept a candidate proposal to create a demo escrow contract record.</p>
+            </div>
+          )}
+
+          {myContracts.length > 0 && (
           <Card className="border-gray-100 bg-white shadow-lg rounded-3xl overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-b border-gray-100">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <CardTitle className="text-xl">{activeContract.projectTitle}</CardTitle>
+                  <CardTitle className="text-xl">{selectedContractForTab.projectTitle}</CardTitle>
                   <CardDescription>
-                    Talent: <strong className="text-gray-800">{activeContract.freelancerName}</strong> • Contract:{" "}
-                    <code className="text-xs font-mono">{activeContract.id}</code>
+                    Talent: <strong className="text-gray-800">{selectedContractForTab.freelancerName}</strong> • Contract:{" "}
+                    <code className="text-xs font-mono">{selectedContractForTab.id}</code>
                   </CardDescription>
                 </div>
-                <div className="text-left sm:text-right">
-                  <span className="text-xs text-gray-500">Escrow Value</span>
-                  <p className="text-2xl font-extrabold text-[#003087]">
-                    {formatCurrency(activeContract.totalBudget, activeContract.currency)}
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="text-left sm:text-right">
+                    <span className="text-xs text-gray-500">Escrow Value</span>
+                    <p className="text-2xl font-extrabold text-[#003087]">
+                      {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
+                    </p>
+                  </div>
+                  <Link
+                    href={`/client/disputes/${selectedContractForTab.id}`}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-2xs"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Dispute Resolution Hub</span>
+                  </Link>
                 </div>
+              {/* Financial Balances */}
               </div>
             </CardHeader>
             <CardContent className="space-y-6 pt-6">
-              {/* Financial Balances */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-100">
                 <div>
                   <span className="text-xs text-gray-500 block">Funds Held in Escrow</span>
                   <span className="text-lg font-bold text-gray-900">
-                    {formatCurrency(activeContract.heldInEscrowAmount, activeContract.currency)}
+                    {formatCurrency(selectedContractForTab.heldInEscrowAmount, selectedContractForTab.currency)}
                   </span>
                 </div>
                 <div>
                   <span className="text-xs text-gray-500 block">Released to Talent</span>
                   <span className="text-lg font-bold text-emerald-600">
-                    {formatCurrency(activeContract.releasedAmount, activeContract.currency)}
+                    {formatCurrency(selectedContractForTab.releasedAmount, selectedContractForTab.currency)}
                   </span>
                 </div>
                 <div>
                   <span className="text-xs text-gray-500 block">Settlement Progress</span>
                   <span className="text-lg font-bold text-[#0070E0]">
-                    {Math.round((activeContract.releasedAmount / activeContract.totalBudget) * 100)}%
+                    {Math.round((selectedContractForTab.releasedAmount / selectedContractForTab.totalBudget) * 100)}%
                   </span>
                 </div>
               </div>
@@ -1860,7 +1947,7 @@ function ClientDashboardContent() {
                 </h3>
 
                 <div className="space-y-4">
-                  {activeContract.milestones.map((ms) => {
+                  {selectedContractForTab.milestones.map((ms) => {
                     const statusInfo = getMilestoneStatusInfo(ms.status);
                     return (
                       <div
@@ -1971,6 +2058,7 @@ function ClientDashboardContent() {
               </div>
             </CardContent>
           </Card>
+          )}
         </div>
       )}
 
