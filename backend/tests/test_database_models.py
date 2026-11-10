@@ -38,7 +38,7 @@ from app.models import (
     Project, Listing, ProjectStatus, ListingType,
     Contract, EscrowStatus,
     Milestone, MilestoneStatus,
-    Submission, SubmissionType,
+    Submission, SubmissionType, VerificationStatus,
     Application, ApplicationStatus,
 )
 
@@ -165,12 +165,23 @@ def group2_golden_flow():
             total_budget=Decimal("5000.00"),
             currency="USD",
             status=ProjectStatus.OPEN,
+            required_skills=["Next.js", "TypeScript", "Tailwind CSS"],
+            experience_level="Expert",
+            additional_requirements="Must sign non-disclosure agreement.",
+            proposed_milestones=[
+                {"step_number": 1, "title": "UI Wireframes", "percentage": 50, "payment_amount": 2500.0},
+                {"step_number": 2, "title": "Implementation", "percentage": 50, "payment_amount": 2500.0},
+            ],
         )
         db.add(project)
         db.commit()
         db.refresh(project)
         assert project.id is not None
         assert project.total_budget == Decimal("5000.00")
+        assert len(project.required_skills) == 3
+        assert project.experience_level == "Expert"
+        assert project.additional_requirements == "Must sign non-disclosure agreement."
+        assert len(project.proposed_milestones) == 2
         # Navigate the relationship: project → client
         assert project.client.name == "Priya Sharma"
         engine._test_project_id = project.id
@@ -263,6 +274,7 @@ def group2_golden_flow():
             submission_type=SubmissionType.URL,
             submission_url="https://figma.com/file/trustpay-dashboard-mockups",
             notes="All 12 screens completed per design system spec.",
+            verification_status=VerificationStatus.COMPLETED,
             ai_score=87,
             quality_grade="Grade A",
             ai_verification_report={
@@ -275,6 +287,7 @@ def group2_golden_flow():
         db.commit()
         db.refresh(submission)
         assert submission.id is not None
+        assert submission.verification_status == VerificationStatus.COMPLETED
         assert submission.ai_score == 87
         # Navigate the full chain: submission → milestone → contract → project → client
         assert submission.milestone.contract.project.client.name == "Priya Sharma"

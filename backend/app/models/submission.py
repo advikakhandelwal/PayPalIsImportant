@@ -10,6 +10,13 @@ class SubmissionType(str, enum.Enum):
     FILE = "FILE"
 
 
+class VerificationStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    SKIPPED = "SKIPPED"
+
+
 class Submission(Base):
     __tablename__ = "submissions"
 
@@ -30,6 +37,7 @@ class Submission(Base):
     notes = Column(Text, nullable=False, default="Deliverable submitted for milestone review.")
 
     # Advika's AI Inspection & Security Verification Cache
+    verification_status = Column(Enum(VerificationStatus), nullable=False, default=VerificationStatus.PENDING)
     ai_score = Column(Integer, nullable=True)                  # 0 to 100
     quality_grade = Column(String(20), nullable=True)          # 'Grade A', 'Grade B', etc.
     ai_verification_report = Column(JSON, nullable=True)        # Checklist, findings, feedback
