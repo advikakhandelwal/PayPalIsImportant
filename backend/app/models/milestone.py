@@ -1,6 +1,6 @@
 import enum
 from decimal import Decimal
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, Enum, Text, JSON, ForeignKey, CheckConstraint
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, Enum, Text, JSON, ForeignKey, CheckConstraint, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -49,6 +49,11 @@ class Milestone(Base):
     # Timeline & Sequential State Machine
     deadline = Column(DateTime(timezone=True), nullable=True)
     status = Column(Enum(MilestoneStatus), nullable=False, default=MilestoneStatus.LOCKED)
+
+    # Revision Limit & Feedback Tracking (Phase 5B)
+    revision_count = Column(Integer, nullable=False, default=0)
+    max_revisions_reached = Column(Boolean, nullable=False, default=False)
+    latest_revision_request = Column(JSON, nullable=True)
 
     # Timestamp
     created_at = Column(DateTime(timezone=True), server_default=func.now())

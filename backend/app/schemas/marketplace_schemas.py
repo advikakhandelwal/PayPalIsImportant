@@ -56,8 +56,27 @@ class MilestoneBlueprintResponse(BaseMarketplaceSchema):
     status: str = "LOCKED"
 
 
+class RevisionRequestCreate(BaseModel):
+    """Client request body when requesting revisions on a deliverable."""
+    feedback: str
+    specific_corrections: Optional[str] = Field(None, alias="specificCorrections")
+    additional_instructions: Optional[str] = Field(None, alias="additionalInstructions")
+
+
+class RevisionRequestResponse(BaseMarketplaceSchema):
+    """Structured record of a client revision request."""
+    id: str
+    feedback: str
+    specific_corrections: Optional[str] = Field(None, serialization_alias="specificCorrections")
+    additional_instructions: Optional[str] = Field(None, serialization_alias="additionalInstructions")
+    requested_at: str = Field(..., serialization_alias="requestedAt")
+    requested_by: str = Field("Client", serialization_alias="requestedBy")
+
+
 class DeliverableSubmissionCreate(BaseModel):
     """Payload sent by Freelancer when submitting a deliverable."""
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
     submission_type: SubmissionType = Field(default=SubmissionType.URL, alias="submissionType")
     submission_url: str = Field(..., alias="submissionUrl")
     file_name: Optional[str] = Field(None, alias="fileName")
@@ -77,6 +96,9 @@ class DeliverableSubmissionResponse(BaseMarketplaceSchema):
     quality_grade: Optional[str] = Field(None, serialization_alias="qualityGrade")
     ai_verification_report: Optional[Dict[str, Any]] = Field(None, serialization_alias="aiVerificationReport")
     submitted_at: str = Field(..., serialization_alias="submittedAt")
+    revision_number: int = Field(1, serialization_alias="revisionNumber")
+    review_status: str = Field("IN_REVIEW", serialization_alias="reviewStatus")
+    revision_request: Optional[RevisionRequestResponse] = Field(None, serialization_alias="revisionRequest")
 
 
 class ContractMilestoneResponse(BaseMarketplaceSchema):
@@ -92,6 +114,10 @@ class ContractMilestoneResponse(BaseMarketplaceSchema):
     deadline: Optional[str] = None
     status: MilestoneStatus
     submission: Optional[DeliverableSubmissionResponse] = None
+    submission_history: List[DeliverableSubmissionResponse] = Field(default_factory=list, serialization_alias="submissionHistory")
+    latest_revision_request: Optional[RevisionRequestResponse] = Field(None, serialization_alias="latestRevisionRequest")
+    revision_count: int = Field(0, serialization_alias="revisionCount")
+    max_revisions_reached: bool = Field(False, serialization_alias="maxRevisionsReached")
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +193,18 @@ class TrustScorecardData(BaseMarketplaceSchema):
     total_earnings_or_spent: float = Field(0.0, serialization_alias="totalEarningsOrSpent")
     currency: str = "USD"
     badges: List[str] = Field(default_factory=list)
+
+
+class ApplicationCreateRequest(BaseModel):
+    """Proposal payload submitted by Freelancer."""
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    cover_letter: str = Field(..., alias="coverLetter")
+    bid_amount: float = Field(..., alias="bidAmount")
+    currency: Optional[str] = "USD"
+    freelancer_id: Optional[str] = Field(None, alias="freelancerId")
+    freelancer_name: Optional[str] = Field(None, alias="freelancerName")
+    freelancer_domain: Optional[str] = Field(None, alias="freelancerDomain")
 
 
 class ApplicationResponse(BaseMarketplaceSchema):
