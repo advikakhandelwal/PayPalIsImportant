@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, Enum, Text, ForeignKey, CheckConstraint
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, Enum, Text, JSON, ForeignKey, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -47,6 +47,14 @@ class Project(Base):
     # Timeline & Status
     deadline = Column(DateTime(timezone=True), nullable=True)
     status = Column(Enum(ProjectStatus), nullable=False, default=ProjectStatus.OPEN)
+
+    # Frontend Marketplace Metadata
+    required_skills = Column(JSON, nullable=False, default=list)
+    experience_level = Column(String(50), nullable=False, default="Intermediate")
+    additional_requirements = Column(Text, nullable=True)
+
+    # Milestone Blueprint Roadmap (Proposed milestone scope before contract creation)
+    proposed_milestones = Column(JSON, nullable=False, default=list)
 
     # Timestamp
     created_at = Column(DateTime(timezone=True), server_default=func.now())

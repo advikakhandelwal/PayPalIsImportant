@@ -1,0 +1,186 @@
+"""
+TrustPay AI — Marketplace Pydantic Schemas
+===========================================
+Defines request and response schemas matching frontend TypeScript contracts
+(frontend/src/types/index.ts) with exact camelCase serialization aliases.
+"""
+
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+from decimal import Decimal
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.project import ProjectStatus, ListingType
+from app.models.contract import EscrowStatus
+from app.models.milestone import MilestoneStatus
+from app.models.submission import SubmissionType, VerificationStatus
+from app.models.application import ApplicationStatus
+
+
+# ---------------------------------------------------------------------------
+# Base Configuration
+# ---------------------------------------------------------------------------
+class BaseMarketplaceSchema(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 1. Milestone Schemas (Separated: Blueprint vs Live Contract)
+# ---------------------------------------------------------------------------
+class MilestoneBlueprintCreate(BaseModel):
+    """Client proposal when designing project milestone roadmap."""
+    step_number: int = Field(..., alias="stepNumber")
+    title: str
+    description: str
+    deliverable_requirements: List[str] = Field(default_factory=list, alias="deliverableRequirements")
+    percentage: int
+    payment_amount: Optional[float] = Field(None, alias="paymentAmount")
+    deadline: Optional[str] = None
+    currency: str = "USD"
+
+
+class MilestoneBlueprintResponse(BaseMarketplaceSchema):
+    """Proposed milestone roadmap returned inside Project listing."""
+    id: str
+    step_number: int = Field(..., serialization_alias="stepNumber")
+    title: str
+    description: str
+    deliverable_requirements: List[str] = Field(default_factory=list, serialization_alias="deliverableRequirements")
+    percentage: int
+    payment_amount: float = Field(..., serialization_alias="paymentAmount")
+    currency: str = "USD"
+    deadline: Optional[str] = None
+    status: str = "LOCKED"
+
+
+class DeliverableSubmissionCreate(BaseModel):
+    """Payload sent by Freelancer when submitting a deliverable."""
+    submission_type: SubmissionType = Field(default=SubmissionType.URL, alias="submissionType")
+    submission_url: str = Field(..., alias="submissionUrl")
+    file_name: Optional[str] = Field(None, alias="fileName")
+    notes: Optional[str] = "Deliverable submitted for milestone review."
+
+
+class DeliverableSubmissionResponse(BaseMarketplaceSchema):
+    """Deliverable record attached to a Contract Milestone."""
+    id: str
+    milestone_id: str = Field(..., serialization_alias="milestoneId")
+    submission_type: SubmissionType = Field(..., serialization_alias="submissionType")
+    submission_url: str = Field(..., serialization_alias="submissionUrl")
+    file_name: Optional[str] = Field(None, serialization_alias="fileName")
+    notes: str
+    verification_status: VerificationStatus = Field(..., serialization_alias="verificationStatus")
+    ai_score: Optional[int] = Field(None, serialization_alias="aiScore")
+    quality_grade: Optional[str] = Field(None, serialization_alias="qualityGrade")
+    ai_verification_report: Optional[Dict[str, Any]] = Field(None, serialization_alias="aiVerificationReport")
+    submitted_at: str = Field(..., serialization_alias="submittedAt")
+
+
+class ContractMilestoneResponse(BaseMarketplaceSchema):
+    """Live Escrow Milestone belonging to an active Contract."""
+    id: str
+    step_number: int = Field(..., serialization_alias="stepNumber")
+    title: str
+    description: str
+    deliverable_requirements: List[str] = Field(default_factory=list, serialization_alias="deliverableRequirements")
+    payment_amount: float = Field(..., serialization_alias="paymentAmount")
+    percentage: int
+    currency: str = "USD"
+    deadline: Optional[str] = None
+    status: MilestoneStatus
+    submission: Optional[DeliverableSubmissionResponse] = None
+
+
+# ---------------------------------------------------------------------------
+# 2. Project Schemas
+# ---------------------------------------------------------------------------
+class ProjectCreateRequest(BaseModel):
+    """Client POST payload when publishing a project."""
+    client_id: str = Field(..., alias="clientId")
+    client_name: Optional[str] = Field(None, alias="clientName")
+    client_company: Optional[str] = Field(None, alias="clientCompany")
+    title: str
+    domain: str = "Full-Stack Development"
+    description: str
+    total_budget: float = Field(..., alias="totalBudget")
+    currency: str = "USD"
+    deadline: Optional[str] = None
+    required_skills: List[str] = Field(default_factory=list, alias="requiredSkills")
+    experience_level: str = Field(default="Intermediate", alias="experienceLevel")
+    additional_requirements: Optional[str] = Field(None, alias="additionalRequirements")
+    milestones: List[MilestoneBlueprintCreate] = Field(default_factory=list)
+
+
+class ProjectResponse(BaseMarketplaceSchema):
+    """Full Project listing for marketplace and client management."""
+    id: str
+    client_id: str = Field(..., serialization_alias="clientId")
+    client_name: str = Field(..., serialization_alias="clientName")
+    client_company: Optional[str] = Field(None, serialization_alias="clientCompany")
+    title: str
+    domain: str
+    description: str
+    total_budget: float = Field(..., serialization_alias="totalBudget")
+    currency: str
+    deadline: Optional[str] = None
+    status: ProjectStatus
+    created_at: str = Field(..., serialization_alias="createdAt")
+    applications_count: int = Field(default=0, serialization_alias="applicationsCount")
+    required_skills: List[str] = Field(default_factory=list, serialization_alias="requiredSkills")
+    experience_level: str = Field(default="Intermediate", serialization_alias="experienceLevel")
+    additional_requirements: Optional[str] = Field(None, serialization_alias="additionalRequirements")
+    milestones: List[MilestoneBlueprintResponse] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# 3. Contract Schemas
+# ---------------------------------------------------------------------------
+class ContractResponse(BaseMarketplaceSchema):
+    """Active Escrow Contract with balances and live milestone states."""
+    id: str
+    project_id: str = Field(..., serialization_alias="projectId")
+    project_title: str = Field(..., serialization_alias="projectTitle")
+    client_id: str = Field(..., serialization_alias="clientId")
+    client_name: str = Field(..., serialization_alias="clientName")
+    freelancer_id: str = Field(..., serialization_alias="freelancerId")
+    freelancer_name: str = Field(..., serialization_alias="freelancerName")
+    total_budget: float = Field(..., serialization_alias="totalBudget")
+    held_in_escrow_amount: float = Field(..., serialization_alias="heldInEscrowAmount")
+    released_amount: float = Field(..., serialization_alias="releasedAmount")
+    currency: str
+    escrow_status: EscrowStatus = Field(..., serialization_alias="escrowStatus")
+    created_at: str = Field(..., serialization_alias="createdAt")
+    milestones: List[ContractMilestoneResponse] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# 4. Application & Trust Scorecard Schemas
+# ---------------------------------------------------------------------------
+class TrustScorecardData(BaseMarketplaceSchema):
+    rating: float = 5.0
+    on_time_delivery_rate: int = Field(100, serialization_alias="onTimeDeliveryRate")
+    compliance_score: int = Field(100, serialization_alias="complianceScore")
+    completed_projects: int = Field(0, serialization_alias="completedProjects")
+    total_earnings_or_spent: float = Field(0.0, serialization_alias="totalEarningsOrSpent")
+    currency: str = "USD"
+    badges: List[str] = Field(default_factory=list)
+
+
+class ApplicationResponse(BaseMarketplaceSchema):
+    """Application record including applicant's trust scorecard."""
+    id: str
+    project_id: str = Field(..., serialization_alias="projectId")
+    freelancer_id: str = Field(..., serialization_alias="freelancerId")
+    freelancer_name: str = Field(..., serialization_alias="freelancerName")
+    freelancer_domain: str = Field(..., serialization_alias="freelancerDomain")
+    cover_letter: str = Field(..., serialization_alias="coverLetter")
+    bid_amount: float = Field(..., serialization_alias="bidAmount")
+    currency: str
+    status: ApplicationStatus
+    created_at: str = Field(..., serialization_alias="createdAt")
+    trust_scorecard: TrustScorecardData = Field(..., serialization_alias="trustScorecard")
+    ai_recommendation: Optional[Dict[str, Any]] = Field(None, serialization_alias="aiRecommendation")
+
