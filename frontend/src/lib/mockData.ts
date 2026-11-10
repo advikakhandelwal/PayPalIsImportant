@@ -8,13 +8,40 @@ import { UserProfile, Project, EscrowContract, Application } from "@/types";
 
 export const SAMPLE_FREELANCER: UserProfile = {
   id: "freelancer-vachan",
-  name: "Vachan Singh rajpurohit",
+  name: "Vachan Singh Rajpurohit",
   email: "vachan@talent.trustpay.ai",
   role: "FREELANCER",
   domain: "Full-Stack & Smart Escrow UI",
   bio: "Senior Frontend Engineer specializing in Next.js, fintech dashboards, and accessible UI engineering.",
   portfolioLinks: ["https://github.com/vachan", "https://trustpay-demo.vercel.app"],
   createdAt: "2026-01-15T00:00:00Z",
+  skills: ["Next.js 14", "React 18", "TypeScript", "Tailwind CSS", "FastAPI", "PostgreSQL", "Smart Contracts", "Fintech UI"],
+  experienceYears: 6,
+  education: ["B.Tech in Computer Science, IIT Bombay (2018-2022)"],
+  certifications: ["Certified Fintech Security Practitioner (2024)", "AWS Certified Solutions Architect"],
+  cvFile: {
+    name: "Vachan_Singh_Senior_FullStack_CV.pdf",
+    size: 148500,
+    uploadedAt: "2026-01-20T10:30:00Z",
+    url: "/demo/Vachan_CV.pdf",
+    extractedInfo: {
+      skills: ["Next.js 14", "React 18", "TypeScript", "Tailwind CSS", "FastAPI", "Python", "Escrow Protocols", "PostgreSQL"],
+      education: ["Bachelor of Technology in Computer Science - IIT Bombay (CGPA 8.9/10)"],
+      experience: [
+        "Lead Frontend Engineer at Web3 FinTech (2023 - Present) - Built multi-party escrow release dashboards",
+        "Senior Software Developer at CloudScale Systems (2021 - 2023) - Architected responsive Next.js apps with 99.9% uptime"
+      ],
+      previousProjects: [
+        "Autonomous Milestone Escrow Portal - Next.js & TypeScript",
+        "AI-assisted Verification Pipeline - Python & Webhooks"
+      ],
+      certifications: [
+        "Certified Fintech Security Practitioner - FSI Council",
+        "AWS Certified Solutions Architect - Associate"
+      ],
+      summary: "6+ years experienced full-stack engineer specialized in high-assurance financial interfaces, milestone escrow mechanisms, and responsive frontend systems."
+    }
+  },
   trustScorecard: {
     rating: 4.95,
     onTimeDeliveryRate: 98,
@@ -29,10 +56,18 @@ export const SAMPLE_FREELANCER: UserProfile = {
 export const SAMPLE_CLIENT: UserProfile = {
   id: "client-fintech-corp",
   name: "Acme Global Ventures",
+  companyName: "Acme Global Technologies India Pvt Ltd",
+  companyDescription: "Leading enterprise technology firm building next-gen autonomous marketplace protocols.",
   email: "contracts@acmeventures.com",
   role: "CLIENT",
   domain: "Fintech & Autonomous Commerce",
   bio: "Enterprise brand building next-gen autonomous marketplace protocols.",
+  country: "India",
+  state: "Karnataka",
+  city: "Bengaluru",
+  address: "Block B, Tech Park, Outer Ring Road, Bellandur",
+  postalCode: "560103",
+  isAddressVerified: false,
   portfolioLinks: ["https://acmeventures.com"],
   createdAt: "2025-11-01T00:00:00Z",
   trustScorecard: {
@@ -65,6 +100,12 @@ export const SAMPLE_PROJECTS: Project[] = [
     requiredSkills: ["Next.js 14", "TypeScript", "Tailwind CSS", "Lucide Icons"],
     experienceLevel: "Expert",
     additionalRequirements: "Must sign non-disclosure agreement and demonstrate accessible responsive layouts.",
+    clientLocation: {
+      city: "Bengaluru",
+      state: "Karnataka",
+      country: "India",
+      isAddressVerified: false,
+    },
     milestones: [
       {
         id: "ms-1",
@@ -81,6 +122,35 @@ export const SAMPLE_PROJECTS: Project[] = [
         currency: "USD",
         deadline: "2026-11-10T00:00:00Z",
         status: "RELEASED",
+        subtasksApproved: true,
+        aiSubdivisionReasoning: "Milestone 1 divided into two sequential technical tasks totaling 25% of total project budget.",
+        revisionCount: 0,
+        subtasks: [
+          {
+            id: "st-1-1",
+            stepNumber: "1.1",
+            title: "Architecture Blueprint & Responsive Tokens",
+            description: "Scaffold App Router, design tokens, and theme interfaces.",
+            percentageOfMilestone: 40,
+            percentageOfTotal: 10,
+            paymentAmount: 400,
+            currency: "USD",
+            status: "COMPLETED",
+            aiReasoning: "Foundational setup requires roughly 40% of the milestone workload.",
+          },
+          {
+            id: "st-1-2",
+            stepNumber: "1.2",
+            title: "TypeScript Domain Contracts & State Providers",
+            description: "Create type safety models and verified theme tokens.",
+            percentageOfMilestone: 60,
+            percentageOfTotal: 15,
+            paymentAmount: 600,
+            currency: "USD",
+            status: "COMPLETED",
+            aiReasoning: "Contract specifications and comprehensive type interfaces form the core deliverable.",
+          },
+        ],
         submission: {
           id: "sub-1",
           milestoneId: "ms-1",
@@ -118,6 +188,47 @@ export const SAMPLE_PROJECTS: Project[] = [
         currency: "USD",
         deadline: "2026-11-20T00:00:00Z",
         status: "ACTIVE",
+        subtasksApproved: true,
+        aiSubdivisionReasoning: "Milestone 2 divided into three technical subtasks totaling 50% of overall project budget.",
+        revisionCount: 0,
+        subtasks: [
+          {
+            id: "st-2-1",
+            stepNumber: "2.1",
+            title: "Client & Freelancer Portal Layouts",
+            description: "Build role-separated portal tabs, stats overview, and project tables.",
+            percentageOfMilestone: 40,
+            percentageOfTotal: 20,
+            paymentAmount: 800,
+            currency: "USD",
+            status: "IN_PROGRESS",
+            aiReasoning: "Portal UI scaffolding constitutes 40% of the active milestone effort.",
+          },
+          {
+            id: "st-2-2",
+            stepNumber: "2.2",
+            title: "Deliverable Dropzone & Submission History",
+            description: "Interactive file upload, URL link entry, and revision logging.",
+            percentageOfMilestone: 30,
+            percentageOfTotal: 15,
+            paymentAmount: 600,
+            currency: "USD",
+            status: "PENDING",
+            aiReasoning: "Dropzone interaction and timeline history components.",
+          },
+          {
+            id: "st-2-3",
+            stepNumber: "2.3",
+            title: "Advisory Pre-verification Hook",
+            description: "Integrate automated quality score and rubric checks.",
+            percentageOfMilestone: 30,
+            percentageOfTotal: 15,
+            paymentAmount: 600,
+            currency: "USD",
+            status: "PENDING",
+            aiReasoning: "Advisory client-side checks for deliverables.",
+          },
+        ],
       },
       {
         id: "ms-3",
@@ -134,6 +245,35 @@ export const SAMPLE_PROJECTS: Project[] = [
         currency: "USD",
         deadline: "2026-12-01T00:00:00Z",
         status: "LOCKED",
+        subtasksApproved: true,
+        aiSubdivisionReasoning: "Milestone 3 divided into two final technical deliverables totaling 25% of total project budget.",
+        revisionCount: 0,
+        subtasks: [
+          {
+            id: "st-3-1",
+            stepNumber: "3.1",
+            title: "Advisory Inspection UI & Score Visualization",
+            description: "Detailed checklist breakdown and score cards.",
+            percentageOfMilestone: 60,
+            percentageOfTotal: 15,
+            paymentAmount: 600,
+            currency: "USD",
+            status: "PENDING",
+            aiReasoning: "Complex inspection visualization requiring 60% of milestone scope.",
+          },
+          {
+            id: "st-3-2",
+            stepNumber: "3.2",
+            title: "Dispute & Settlement Confirmation Suite",
+            description: "Structured evidence lodgment and mutual agreement modal.",
+            percentageOfMilestone: 40,
+            percentageOfTotal: 10,
+            paymentAmount: 400,
+            currency: "USD",
+            status: "PENDING",
+            aiReasoning: "Settlement dialog and dispute triggers.",
+          },
+        ],
       },
     ],
   },
@@ -329,6 +469,20 @@ export const SAMPLE_APPLICATIONS: Application[] = [
     status: "ACCEPTED",
     createdAt: "2026-11-01T14:30:00Z",
     trustScorecard: SAMPLE_FREELANCER.trustScorecard,
+    estimatedDeliveryDays: 14,
+    freelancerProfile: {
+      name: "Vachan Singh Rajpurohit",
+      skills: ["Next.js 14", "React 18", "TypeScript", "Tailwind CSS", "FastAPI", "PostgreSQL", "Smart Contracts", "Fintech UI"],
+      experienceYears: 6,
+      education: ["B.Tech in Computer Science, IIT Bombay (2018-2022)"],
+      experience: [
+        "Lead Frontend Engineer at Web3 FinTech (2023 - Present) - Built multi-party escrow release dashboards",
+        "Senior Software Developer at CloudScale Systems (2021 - 2023) - Architected responsive Next.js apps with 99.9% uptime"
+      ],
+      portfolioLinks: ["https://github.com/vachan", "https://trustpay-demo.vercel.app"],
+      certifications: ["Certified Fintech Security Practitioner (2024)", "AWS Certified Solutions Architect"],
+      cvFile: SAMPLE_FREELANCER.cvFile,
+    },
     aiRecommendation: {
       fitScore: 97,
       domainMatchRate: 98,
@@ -355,6 +509,38 @@ export const SAMPLE_APPLICATIONS: Application[] = [
       totalEarningsOrSpent: 32000,
       currency: "USD",
       badges: ["Clean Code Certified"],
+    },
+    estimatedDeliveryDays: 20,
+    freelancerProfile: {
+      name: "Alex Chen",
+      skills: ["React", "TypeScript", "Node.js", "GraphQL", "Docker"],
+      experienceYears: 10,
+      education: ["B.S. in Computer Science - University of Washington"],
+      experience: [
+        "Staff Software Engineer at Enterprise SaaS (2020 - 2025)",
+        "Full-Stack Consultant at TechSolutions (2015 - 2020)"
+      ],
+      portfolioLinks: ["https://github.com/alexchen"],
+      certifications: ["CKA: Certified Kubernetes Administrator"],
+      cvFile: {
+        name: "Alex_Chen_Staff_Engineer_CV.pdf",
+        size: 162000,
+        uploadedAt: "2026-01-10T11:00:00Z",
+        extractedInfo: {
+          skills: ["React", "TypeScript", "Node.js", "GraphQL", "PostgreSQL", "Docker", "Kubernetes"],
+          education: ["B.S. in Computer Science - University of Washington (2015)"],
+          experience: [
+            "Staff Software Engineer at Enterprise SaaS (2020 - Present) - Led frontend architecture for 5M+ active users",
+            "Senior Full-Stack Consultant (2015 - 2020) - Delivered 30+ client projects on time"
+          ],
+          previousProjects: [
+            "High-Throughput Analytics Dashboard - React & GraphQL",
+            "Enterprise Multi-Tenant Design System - Storybook & Tailwind"
+          ],
+          certifications: ["CKA: Certified Kubernetes Administrator"],
+          summary: "Veteran engineer with 10+ years specializing in enterprise React applications, distributed systems, and team technical leadership."
+        }
+      }
     },
     aiRecommendation: {
       fitScore: 89,

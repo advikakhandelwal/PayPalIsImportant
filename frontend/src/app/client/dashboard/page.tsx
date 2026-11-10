@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { formatCurrency, formatDate, getMilestoneStatusInfo, getEscrowStatusInfo } from "@/lib/utils";
-import { Milestone, Project, Application, MilestoneStatus } from "@/types";
+import { Milestone, Project, Application, MilestoneStatus, MilestoneSubtask, FreelancerCV } from "@/types";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -25,6 +25,7 @@ import {
   Sparkles,
   ExternalLink,
   ShieldCheck,
+  ShieldAlert,
   AlertCircle,
   Edit3,
   X,
@@ -38,6 +39,12 @@ import {
   DollarSign,
   Calendar,
   Check,
+  History,
+  ChevronDown,
+  MapPin,
+  Download,
+  FileCheck,
+  Award,
 } from "lucide-react";
 
 type ClientTab = "overview" | "projects" | "post" | "proposals" | "contracts" | "profile" | "details";
@@ -49,6 +56,9 @@ interface MilestoneDraft {
   percentage: number;
   paymentAmount: number;
   deadline: string;
+  subtasks?: MilestoneSubtask[];
+  subtasksApproved?: boolean;
+  aiSubdivisionReasoning?: string;
 }
 
 const POPULAR_SKILLS = [
@@ -71,16 +81,23 @@ function ClientDashboardContent() {
   const initialTab = (searchParams.get("tab") as ClientTab) || "overview";
   const initialProjectId = searchParams.get("id") || "";
 
-  const { currentUser, updateProfile } = useAuth();
+  const { currentUser, activeRole, setActiveRole, updateProfile, isHydrated } = useAuth();
   const {
     projects,
     applications,
+    contracts,
     activeContract,
     createProject,
     updateProject,
+    acceptApplication,
+    rejectApplication,
     approveMilestone,
     requestMilestoneRevision,
   } = useMarketplace();
+
+  // Frontend UI route guard: show access-denied state if wrong role.
+  // NOTE: This is demo-only UI filtering. Real security lives in the backend.
+  const isClientRole = activeRole === 'CLIENT' || currentUser.role === 'CLIENT';
 
   const [activeTab, setActiveTab] = useState<ClientTab>(initialTab);
   const [selectedProjectId, setSelectedProjectId] = useState<string>(initialProjectId);
@@ -105,11 +122,11 @@ function ClientDashboardContent() {
   const [isEditingExisting, setIsEditingExisting] = useState<boolean>(false);
   const [editingProjectId, setEditingProjectId] = useState<string>("");
 
-  // Form Fields
+  // Form Fields (Defaults to INR as required)
   const [newTitle, setNewTitle] = useState("");
   const [newDomain, setNewDomain] = useState("Full-Stack Development");
-  const [newTotalBudget, setNewTotalBudget] = useState<number>(3000);
-  const [newCurrency, setNewCurrency] = useState("USD");
+  const [newTotalBudget, setNewTotalBudget] = useState<number>(150000);
+  const [newCurrency, setNewCurrency] = useState("INR");
   const [newDeadline, setNewDeadline] = useState("2026-12-15");
   const [newDescription, setNewDescription] = useState("");
   const [newSkills, setNewSkills] = useState<string[]>(["React", "TypeScript", "Tailwind CSS"]);
@@ -117,28 +134,112 @@ function ClientDashboardContent() {
   const [newExperienceLevel, setNewExperienceLevel] = useState<"Entry" | "Intermediate" | "Expert">("Intermediate");
   const [newAdditionalRequirements, setNewAdditionalRequirements] = useState("");
 
-  // Milestone Builder State (Configurable, NOT hardcoded 30/40/30)
+  // Milestone Builder State with AI-assisted subdivision
   const [newMilestones, setNewMilestones] = useState<MilestoneDraft[]>([
     {
       title: "Architecture & Foundation Setup",
       description: "Project scaffolding, core contracts, and responsive layout.",
       percentage: 25,
-      paymentAmount: 750,
+      paymentAmount: 37500,
       deadline: "2026-11-20",
+      subtasksApproved: true,
+      aiSubdivisionReasoning: "AI Advisory: Milestone divided into 2 technical subtasks totaling 25% of parent budget.",
+      subtasks: [
+        {
+          id: "st-draft-1",
+          stepNumber: "1.1",
+          title: "Technical Blueprint & Design Tokens",
+          description: "Establish design tokens, App Router layout, and contracts.",
+          percentageOfMilestone: 40,
+          percentageOfTotal: 10,
+          paymentAmount: 15000,
+          currency: "INR",
+          status: "PENDING",
+          aiReasoning: "Foundational setup requires 40% of parent milestone workload.",
+        },
+        {
+          id: "st-draft-2",
+          stepNumber: "1.2",
+          title: "TypeScript Domain Contracts & State Structure",
+          description: "Setup App Router structure and initial state models.",
+          percentageOfMilestone: 60,
+          percentageOfTotal: 15,
+          paymentAmount: 22500,
+          currency: "INR",
+          status: "PENDING",
+          aiReasoning: "State logic and scaffolding comprises 60% of milestone scope.",
+        },
+      ],
     },
     {
       title: "Core Feature Implementation",
       description: "Main feature delivery, backend endpoint integration, and responsive verification.",
       percentage: 50,
-      paymentAmount: 1500,
+      paymentAmount: 75000,
       deadline: "2026-12-05",
+      subtasksApproved: true,
+      aiSubdivisionReasoning: "AI Advisory: Milestone divided into 2 technical subtasks totaling 50% of parent budget.",
+      subtasks: [
+        {
+          id: "st-draft-3",
+          stepNumber: "2.1",
+          title: "Core Workflow & Component Modules",
+          description: "Implement interactive dashboard panels and business logic.",
+          percentageOfMilestone: 60,
+          percentageOfTotal: 30,
+          paymentAmount: 45000,
+          currency: "INR",
+          status: "PENDING",
+          aiReasoning: "Core module development represents 60% of milestone effort.",
+        },
+        {
+          id: "st-draft-4",
+          stepNumber: "2.2",
+          title: "Integration & Dropzone Handlers",
+          description: "Form verification, submission endpoints, and error boundaries.",
+          percentageOfMilestone: 40,
+          percentageOfTotal: 20,
+          paymentAmount: 30000,
+          currency: "INR",
+          status: "PENDING",
+          aiReasoning: "Integration and validation comprises 40% of milestone effort.",
+        },
+      ],
     },
     {
       title: "Testing, Audit & Final Handover",
       description: "Criteria verification checklist, zero-leak scan, and documentation handover.",
       percentage: 25,
-      paymentAmount: 750,
+      paymentAmount: 37500,
       deadline: "2026-12-15",
+      subtasksApproved: true,
+      aiSubdivisionReasoning: "AI Advisory: Milestone divided into 2 technical subtasks totaling 25% of parent budget.",
+      subtasks: [
+        {
+          id: "st-draft-5",
+          stepNumber: "3.1",
+          title: "Verification Testing & Vulnerability Scan",
+          description: "Pass automated linters, accessibility audit, and build trace.",
+          percentageOfMilestone: 50,
+          percentageOfTotal: 12.5,
+          paymentAmount: 18750,
+          currency: "INR",
+          status: "PENDING",
+          aiReasoning: "Security and testing audit takes 50% of milestone scope.",
+        },
+        {
+          id: "st-draft-6",
+          stepNumber: "3.2",
+          title: "Final Packaging & Production Handover",
+          description: "Clean artifacts, documentation handover, and deployment checklist.",
+          percentageOfMilestone: 50,
+          percentageOfTotal: 12.5,
+          paymentAmount: 18750,
+          currency: "INR",
+          status: "PENDING",
+          aiReasoning: "Handover and release packaging constitutes remaining 50%.",
+        },
+      ],
     },
   ]);
 
@@ -146,30 +247,90 @@ function ClientDashboardContent() {
   const [postSuccess, setPostSuccess] = useState("");
   const [isPublishing, setIsPublishing] = useState(false);
 
+
   // Proposals Filter State
   const [proposalFilter, setProposalFilter] = useState<"ALL" | "AI_SHORTLIST">("ALL");
-  const [localApplications, setLocalApplications] = useState<Application[]>(applications);
   const [filterByProjectId, setFilterByProjectId] = useState<string>("ALL");
 
-  useEffect(() => {
-    setLocalApplications(applications);
-  }, [applications]);
-
+  // Ownership-filtered applications: only for this client's own projects
+  const myProjectIds = projects
+    .filter((p) => p.clientId === currentUser.id)
+    .map((p) => p.id);
+  const localApplications = applications.filter((a) => myProjectIds.includes(a.projectId));
   // Request Revision Modal State
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [revisionMilestoneId, setRevisionMilestoneId] = useState<string>("");
   const [revisionNotes, setRevisionNotes] = useState("");
   const [actionSuccessMsg, setActionSuccessMsg] = useState("");
 
-  // Edit Company Profile State
+  // Candidate Dossier Inspection Modal State
+  const [selectedApplicantForReview, setSelectedApplicantForReview] = useState<Application | null>(null);
+  const [showCVPreviewModal, setShowCVPreviewModal] = useState<boolean>(false);
+
+  // Edit Company Profile State (with transparent location details)
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [companyName, setCompanyName] = useState(currentUser.companyName || "");
-  const [contactName, setContactName] = useState(currentUser.name || "");
-  const [companyDescription, setCompanyDescription] = useState(currentUser.companyDescription || "");
+  const [companyName, setCompanyName] = useState(currentUser.companyName || "Acme Global Technologies India Pvt Ltd");
+  const [contactName, setContactName] = useState(currentUser.name || "Client Representative");
+  const [companyDescription, setCompanyDescription] = useState(currentUser.companyDescription || "Enterprise venture studio building autonomous commerce protocols.");
   const [industry, setIndustry] = useState(currentUser.domain || "Fintech & Autonomous Commerce");
+  const [country, setCountry] = useState(currentUser.country || "India");
+  const [stateName, setStateName] = useState(currentUser.state || "Karnataka");
+  const [city, setCity] = useState(currentUser.city || "Bengaluru");
+  const [address, setAddress] = useState(currentUser.address || "Block B, Tech Park, Outer Ring Road, Bellandur");
+  const [postalCode, setPostalCode] = useState(currentUser.postalCode || "560103");
   const [profileSuccessMsg, setProfileSuccessMsg] = useState("");
 
-  const escrowStatusInfo = getEscrowStatusInfo(activeContract.escrowStatus);
+  // AI-Assisted Milestone Subtask Generator
+  const handleGenerateAISubtasks = (milestoneIndex: number) => {
+    const m = newMilestones[milestoneIndex];
+    const p1 = Math.round(m.percentage * 0.4);
+    const p2 = m.percentage - p1;
+    const a1 = Math.round((newTotalBudget * p1) / 100);
+    const a2 = m.paymentAmount - a1;
+
+    const sub1: MilestoneSubtask = {
+      id: `st-${Date.now()}-1`,
+      stepNumber: `${milestoneIndex + 1}.1`,
+      title: `${m.title} - Setup & Specs`,
+      description: "Initial design, specifications, and architecture models.",
+      percentageOfMilestone: 40,
+      percentageOfTotal: p1,
+      paymentAmount: a1,
+      currency: newCurrency,
+      status: "PENDING",
+      aiReasoning: "Foundational setup requires approx 40% of milestone workload.",
+    };
+
+    const sub2: MilestoneSubtask = {
+      id: `st-${Date.now()}-2`,
+      stepNumber: `${milestoneIndex + 1}.2`,
+      title: `${m.title} - Implementation & Delivery`,
+      description: "Core execution, unit verification, and deliverable packaging.",
+      percentageOfMilestone: 60,
+      percentageOfTotal: p2,
+      paymentAmount: a2,
+      currency: newCurrency,
+      status: "PENDING",
+      aiReasoning: "Execution, integration, and delivery comprise remaining 60%.",
+    };
+
+    const updated = [...newMilestones];
+    updated[milestoneIndex] = {
+      ...m,
+      subtasks: [sub1, sub2],
+      subtasksApproved: true,
+      aiSubdivisionReasoning: `AI Advisory: Parent milestone (${m.percentage}%, ${formatCurrency(m.paymentAmount, newCurrency)}) divided into 2 subtasks adding up to exactly ${m.percentage}%.`,
+    };
+    setNewMilestones(updated);
+  };
+
+  // Contracts filtered for this client
+  const myContracts = contracts.filter((c) => c.clientId === currentUser.id);
+  // For the contracts tab: use a selected contract (default to first owned one)
+  const [selectedContractId, setSelectedContractId] = useState<string>("");
+  const selectedContractForTab =
+    myContracts.find((c) => c.id === selectedContractId) ?? myContracts[0] ?? activeContract;
+  const escrowStatusInfo = getEscrowStatusInfo(selectedContractForTab.escrowStatus);
 
   // Metrics Calculations for Dashboard Overview
   const totalProjectsCount = projects.length;
@@ -253,7 +414,7 @@ function ClientDashboardContent() {
     setNewTitle(proj.title);
     setNewDomain(proj.domain);
     setNewTotalBudget(proj.totalBudget);
-    setNewCurrency(proj.currency || "USD");
+    setNewCurrency(proj.currency || "INR");
     setNewDeadline(proj.deadline ? proj.deadline.split("T")[0] : "2026-12-15");
     setNewDescription(proj.description);
     setNewSkills(proj.requiredSkills || ["Next.js", "TypeScript"]);
@@ -280,8 +441,8 @@ function ClientDashboardContent() {
     setEditingProjectId("");
     setNewTitle("");
     setNewDomain("Full-Stack Development");
-    setNewTotalBudget(3000);
-    setNewCurrency("USD");
+    setNewTotalBudget(150000);
+    setNewCurrency("INR");
     setNewDeadline("2026-12-15");
     setNewDescription("");
     setNewSkills(["React", "TypeScript", "Tailwind CSS"]);
@@ -417,23 +578,21 @@ function ClientDashboardContent() {
     setActiveTab("proposals");
   };
 
-  // Candidate review handlers
+  // Candidate review handlers (wired to shared MarketplaceContext)
   const handleAcceptCandidate = (appId: string) => {
-    setLocalApplications((prev) =>
-      prev.map((a) => (a.id === appId ? { ...a, status: "ACCEPTED" } : a))
-    );
-    setActionSuccessMsg("Candidate accepted! Milestone escrow contract agreement activated.");
-    setTimeout(() => setActionSuccessMsg(""), 3500);
+    acceptApplication(appId, currentUser.id);
+    setActionSuccessMsg('Candidate accepted! Demo escrow contract record created. Contract now visible to both parties.');
+    setTimeout(() => setActionSuccessMsg(""), 4000);
   };
 
   const handleDeclineCandidate = (appId: string) => {
-    setLocalApplications((prev) =>
-      prev.map((a) => (a.id === appId ? { ...a, status: "REJECTED" } : a))
-    );
+    rejectApplication(appId, currentUser.id);
+    setActionSuccessMsg("Candidate declined.");
+    setTimeout(() => setActionSuccessMsg(""), 2500);
   };
 
   const handleApproveMilestone = (milestoneId: string) => {
-    approveMilestone(activeContract.id, milestoneId);
+    approveMilestone(selectedContractForTab.id, milestoneId);
     setActionSuccessMsg("Milestone approved! Payout released from escrow to talent.");
     setTimeout(() => setActionSuccessMsg(""), 3500);
   };
@@ -448,7 +607,7 @@ function ClientDashboardContent() {
     e.preventDefault();
     if (!revisionNotes.trim()) return;
 
-    requestMilestoneRevision(activeContract.id, revisionMilestoneId, revisionNotes.trim());
+    requestMilestoneRevision(selectedContractForTab.id, revisionMilestoneId, revisionNotes.trim());
     setIsRevisionModalOpen(false);
     setActionSuccessMsg("Revision request with feedback sent to talent.");
     setTimeout(() => setActionSuccessMsg(""), 3500);
@@ -478,6 +637,40 @@ function ClientDashboardContent() {
 
   // Active Project for Details View
   const selectedProject = projects.find((p) => p.id === selectedProjectId) || projects[0];
+
+  if (!isClientRole) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+        <Card className="p-8 border-gray-200 bg-white shadow-sm rounded-3xl space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <Badge variant="warning" size="md">Client Workspace Restricted</Badge>
+          <h2 className="text-xl font-bold text-gray-950">Active Role is Freelancer</h2>
+          <p className="text-xs text-gray-500 max-w-md mx-auto">
+            You are currently signed in with a Freelancer profile. To access client project creation, applicant inbox, and milestone escrow management, switch to Client mode or continue to the Freelancer Workspace.
+          </p>
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link href="/freelancer/dashboard">
+              <Button variant="outline" size="sm">
+                Go to Freelancer Workspace
+              </Button>
+            </Link>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setActiveRole("CLIENT")}
+            >
+              Switch to Client Mode
+            </Button>
+          </div>
+          <p className="text-[11px] text-gray-400 pt-2">
+            Demo notice: Frontend role guard active. Real authorization is enforced by the authentication backend.
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -1042,6 +1235,7 @@ function ClientDashboardContent() {
                         onChange={(e) => setNewCurrency(e.target.value)}
                         className="w-full h-11 px-4 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0070E0]"
                       >
+                        <option value="INR">INR (₹)</option>
                         <option value="USD">USD ($)</option>
                         <option value="EUR">EUR (€)</option>
                         <option value="GBP">GBP (£)</option>
@@ -1275,6 +1469,67 @@ function ClientDashboardContent() {
                           value={m.description}
                           onChange={(e) => handleUpdateMilestone(idx, "description", e.target.value)}
                         />
+
+                        {/* AI-Assisted Subtask Division Controls */}
+                        <div className="pt-2 border-t border-gray-200/80">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-xs text-[#003087] font-bold">
+                              <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                              <span>AI-Assisted Subtask Division</span>
+                              {m.subtasksApproved && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                  Approved ({m.subtasks?.length} Subtasks)
+                                </span>
+                              )}
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="text-[11px] h-7 px-2.5 bg-white text-[#0070E0] border-blue-200 hover:bg-blue-50"
+                              onClick={() => handleGenerateAISubtasks(idx)}
+                            >
+                              <Sparkles className="w-3 h-3 mr-1 text-purple-600" />
+                              {m.subtasks ? "Regenerate AI Subtasks" : "Generate AI Subtasks"}
+                            </Button>
+                          </div>
+
+                          {m.aiSubdivisionReasoning && (
+                            <p className="text-[11px] text-gray-500 mt-1 italic">
+                              {m.aiSubdivisionReasoning}
+                            </p>
+                          )}
+
+                          {/* Subtasks breakdown */}
+                          {m.subtasks && m.subtasks.length > 0 && (
+                            <div className="mt-2.5 space-y-2 bg-white p-3 rounded-xl border border-gray-200">
+                              <span className="text-[11px] font-bold text-gray-700 block uppercase tracking-wider">
+                                Recommended Internal Tasks (Reconciles to {m.percentage}% Parent Total):
+                              </span>
+                              <div className="space-y-1.5">
+                                {m.subtasks.map((st, sIdx) => (
+                                  <div
+                                    key={st.id || sIdx}
+                                    className="p-2 rounded-lg bg-gray-50 border border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-extrabold text-[#003087] bg-white px-1.5 py-0.5 rounded text-[10px] border border-gray-200">
+                                        {st.stepNumber}
+                                      </span>
+                                      <span className="font-medium text-gray-800">{st.title}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                                      <span>{st.percentageOfTotal}% of project</span>
+                                      <span className="font-bold text-[#003087]">
+                                        {formatCurrency(st.paymentAmount, newCurrency)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1750,7 +2005,18 @@ function ClientDashboardContent() {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="pt-2 border-t border-gray-100 flex items-center justify-end gap-2">
+                  <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs text-[#0070E0] border-blue-200 hover:bg-blue-50"
+                      onClick={() => setSelectedApplicantForReview(app)}
+                    >
+                      <Eye className="w-3.5 h-3.5 mr-1 text-[#0070E0]" />
+                      Inspect Candidate Profile &amp; CV
+                    </Button>
+                    <div className="flex items-center gap-2">
                     {app.status === "PENDING" && (
                       <>
                         <Button
@@ -1778,6 +2044,7 @@ function ClientDashboardContent() {
                         <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                       </Button>
                     )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -1812,43 +2079,81 @@ function ClientDashboardContent() {
             </Badge>
           </div>
 
+          {/* Contract Selector – shown when client has multiple contracts */}
+          {myContracts.length > 1 && (
+            <Card className="border-gray-100 bg-white p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <span className="text-xs font-bold text-gray-700 shrink-0">Select Contract:</span>
+                <select
+                  value={selectedContractId || selectedContractForTab.id}
+                  onChange={(e) => setSelectedContractId(e.target.value)}
+                  className="flex-1 h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                >
+                  {myContracts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.projectTitle} — {c.freelancerName} ({c.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </Card>
+          )}
+
+          {myContracts.length === 0 && (
+            <div className="p-12 text-center text-gray-500 bg-white rounded-2xl border border-gray-100">
+              <Lock className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold">No active contracts yet.</p>
+              <p className="text-xs text-gray-400 mt-1">Accept a candidate proposal to create a demo escrow contract record.</p>
+            </div>
+          )}
+
+          {myContracts.length > 0 && (
           <Card className="border-gray-100 bg-white shadow-lg rounded-3xl overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-b border-gray-100">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <CardTitle className="text-xl">{activeContract.projectTitle}</CardTitle>
+                  <CardTitle className="text-xl">{selectedContractForTab.projectTitle}</CardTitle>
                   <CardDescription>
-                    Talent: <strong className="text-gray-800">{activeContract.freelancerName}</strong> • Contract:{" "}
-                    <code className="text-xs font-mono">{activeContract.id}</code>
+                    Talent: <strong className="text-gray-800">{selectedContractForTab.freelancerName}</strong> • Contract:{" "}
+                    <code className="text-xs font-mono">{selectedContractForTab.id}</code>
                   </CardDescription>
                 </div>
-                <div className="text-left sm:text-right">
-                  <span className="text-xs text-gray-500">Escrow Value</span>
-                  <p className="text-2xl font-extrabold text-[#003087]">
-                    {formatCurrency(activeContract.totalBudget, activeContract.currency)}
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="text-left sm:text-right">
+                    <span className="text-xs text-gray-500">Escrow Value</span>
+                    <p className="text-2xl font-extrabold text-[#003087]">
+                      {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
+                    </p>
+                  </div>
+                  <Link
+                    href={`/client/disputes/${selectedContractForTab.id}`}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-2xs"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Dispute Resolution Hub</span>
+                  </Link>
                 </div>
+              {/* Financial Balances */}
               </div>
             </CardHeader>
             <CardContent className="space-y-6 pt-6">
-              {/* Financial Balances */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-100">
                 <div>
                   <span className="text-xs text-gray-500 block">Funds Held in Escrow</span>
                   <span className="text-lg font-bold text-gray-900">
-                    {formatCurrency(activeContract.heldInEscrowAmount, activeContract.currency)}
+                    {formatCurrency(selectedContractForTab.heldInEscrowAmount, selectedContractForTab.currency)}
                   </span>
                 </div>
                 <div>
                   <span className="text-xs text-gray-500 block">Released to Talent</span>
                   <span className="text-lg font-bold text-emerald-600">
-                    {formatCurrency(activeContract.releasedAmount, activeContract.currency)}
+                    {formatCurrency(selectedContractForTab.releasedAmount, selectedContractForTab.currency)}
                   </span>
                 </div>
                 <div>
                   <span className="text-xs text-gray-500 block">Settlement Progress</span>
                   <span className="text-lg font-bold text-[#0070E0]">
-                    {Math.round((activeContract.releasedAmount / activeContract.totalBudget) * 100)}%
+                    {Math.round((selectedContractForTab.releasedAmount / selectedContractForTab.totalBudget) * 100)}%
                   </span>
                 </div>
               </div>
@@ -1860,7 +2165,7 @@ function ClientDashboardContent() {
                 </h3>
 
                 <div className="space-y-4">
-                  {activeContract.milestones.map((ms) => {
+                  {selectedContractForTab.milestones.map((ms) => {
                     const statusInfo = getMilestoneStatusInfo(ms.status);
                     return (
                       <div
@@ -1887,11 +2192,82 @@ function ClientDashboardContent() {
 
                         <p className="text-xs text-gray-600 mb-3">{ms.description}</p>
 
+                        {/* Internal Subtasks Progress Tracker */}
+                        {ms.subtasks && ms.subtasks.length > 0 && (
+                          <div className="mb-3.5 p-3.5 bg-gray-50 rounded-2xl border border-gray-100 space-y-2.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-bold text-[#003087] flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                                Internal Subtask Division ({ms.subtasks.filter(s => s.status === 'COMPLETED').length}/{ms.subtasks.length} Completed)
+                              </span>
+                              <span className="text-gray-500 font-semibold">
+                                {Math.round((ms.subtasks.filter(s => s.status === 'COMPLETED').length / ms.subtasks.length) * 100)}% Milestone Progress
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {ms.subtasks.map((st) => (
+                                <div
+                                  key={st.id}
+                                  className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                                    st.status === 'COMPLETED'
+                                      ? 'bg-emerald-50/50 border-emerald-200'
+                                      : st.status === 'IN_PROGRESS'
+                                      ? 'bg-blue-50/50 border-blue-200'
+                                      : 'bg-white border-gray-200'
+                                  }`}
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-extrabold text-[#003087] text-[10px]">{st.stepNumber}</span>
+                                      <span className="font-semibold text-gray-800 truncate">{st.title}</span>
+                                    </div>
+                                    <span className="text-[10px] text-gray-500 block mt-0.5">
+                                      {st.percentageOfTotal}% total ({formatCurrency(st.paymentAmount, ms.currency)})
+                                    </span>
+                                  </div>
+                                  <Badge
+                                    variant={
+                                      st.status === 'COMPLETED'
+                                        ? 'success'
+                                        : st.status === 'IN_PROGRESS'
+                                        ? 'inReview'
+                                        : 'neutral'
+                                    }
+                                    size="sm"
+                                  >
+                                    {st.status.replace('_', ' ')}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         {/* Deliverable details if submitted */}
                         {ms.submission && (
                           <div className="p-3.5 bg-white rounded-xl border border-gray-200 text-xs space-y-2 mb-3">
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold text-gray-700">Submitted Work Proof:</span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-gray-700">Submitted Work Proof:</span>
+                                <Badge
+                                  variant={
+                                    ms.revisionCount && ms.revisionCount >= 3
+                                      ? "danger"
+                                      : ms.revisionCount && ms.revisionCount > 0
+                                      ? "warning"
+                                      : "neutral"
+                                  }
+                                  size="sm"
+                                >
+                                  {!ms.revisionCount || ms.revisionCount === 0
+                                    ? "Initial Submission"
+                                    : ms.revisionCount === 1
+                                    ? "Revision 1 of 3"
+                                    : ms.revisionCount === 2
+                                    ? "Revision 2 of 3"
+                                    : "Revision 3 of 3 (Final Submission)"}
+                                </Badge>
+                              </div>
                               <span className="text-gray-400 text-[11px]">{formatDate(ms.submission.submittedAt)}</span>
                             </div>
                             <a
@@ -1971,6 +2347,7 @@ function ClientDashboardContent() {
               </div>
             </CardContent>
           </Card>
+          )}
         </div>
       )}
 
@@ -2021,11 +2398,49 @@ function ClientDashboardContent() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <span className="font-semibold text-gray-700 block mb-1">Primary Contact:</span>
-                      <span className="text-gray-800 font-bold">{currentUser.name}</span>
+                      <span className="text-gray-800 font-bold">{contactName}</span>
                     </div>
                     <div>
                       <span className="font-semibold text-gray-700 block mb-1">Business Email:</span>
                       <span className="text-gray-800 font-bold">{currentUser.email}</span>
+                    </div>
+                  </div>
+
+                  {/* Client Location & Registered Business Address */}
+                  <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#003087]">
+                        <MapPin className="w-4 h-4 text-[#0070E0]" />
+                        <span>Registered Business Location</span>
+                      </div>
+                      <Badge variant="warning" size="sm">
+                        Address Provided (Pending Independent Verification)
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div>
+                        <span className="text-gray-400 block font-medium">City:</span>
+                        <strong className="text-gray-800">{city}</strong>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block font-medium">State / Province:</span>
+                        <strong className="text-gray-800">{stateName}</strong>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block font-medium">Country:</span>
+                        <strong className="text-gray-800">{country}</strong>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-200 text-xs">
+                      <span className="text-gray-400 block font-medium">Complete Business Address:</span>
+                      <p className="text-gray-700 mt-0.5 font-medium">
+                        {address} {postalCode ? "(" + postalCode + ")" : ""}
+                      </p>
+                      <p className="text-[11px] text-gray-400 mt-1 italic">
+                        Transparently shared with evaluating freelancers. Not publicly indexed to unauthenticated web visitors.
+                      </p>
                     </div>
                   </div>
 
@@ -2060,10 +2475,55 @@ function ClientDashboardContent() {
                   <Textarea
                     label="Company Description"
                     required
-                    rows={4}
+                    rows={3}
                     value={companyDescription}
                     onChange={(e) => setCompanyDescription(e.target.value)}
                   />
+
+                  {/* Location & Address Inputs */}
+                  <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-[#0070E0]" />
+                      <span className="text-xs font-bold text-gray-900">Organization Location &amp; Address</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <Input
+                        label="Country"
+                        required
+                        value={country}
+                        onChange={(e) => setCountry(e.target.value)}
+                      />
+                      <Input
+                        label="State / Province"
+                        required
+                        value={stateName}
+                        onChange={(e) => setStateName(e.target.value)}
+                      />
+                      <Input
+                        label="City"
+                        required
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="sm:col-span-2">
+                        <Input
+                          label="Complete Business / Company Address"
+                          required
+                          value={address}
+                          onChange={(e) => setAddress(e.target.value)}
+                        />
+                      </div>
+                      <Input
+                        label="Postal / PIN Code (Optional)"
+                        value={postalCode}
+                        onChange={(e) => setPostalCode(e.target.value)}
+                      />
+                    </div>
+                  </div>
 
                   <div className="flex items-center gap-2 pt-2">
                     <Button type="submit" variant="primary" size="sm">
@@ -2082,6 +2542,305 @@ function ClientDashboardContent() {
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* ── MODAL: COMPREHENSIVE CANDIDATE DOSSIER & CV EVALUATION ── */}
+      {selectedApplicantForReview && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden my-8 animate-slide-up">
+            {/* Modal Header */}
+            <div className="p-6 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#003087] text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                  {selectedApplicantForReview.freelancerName.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-[#003087]">
+                      {selectedApplicantForReview.freelancerName}
+                    </h3>
+                    <Badge variant="paypal" size="sm">
+                      {selectedApplicantForReview.freelancerDomain}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Application Dossier &amp; Verified Professional Credentials
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedApplicantForReview(null)}
+                className="text-gray-400 hover:text-gray-600 p-2 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+              {/* Proposal & Bid Highlights */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-gray-50 border border-gray-100 text-xs">
+                <div>
+                  <span className="text-gray-400 block font-medium">Proposed Bid:</span>
+                  <span className="text-base font-extrabold text-[#003087]">
+                    {formatCurrency(selectedApplicantForReview.bidAmount, selectedApplicantForReview.currency)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-400 block font-medium">Estimated Delivery:</span>
+                  <span className="text-base font-bold text-emerald-600">
+                    {selectedApplicantForReview.estimatedDeliveryDays || 14} Days
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-400 block font-medium">Trust Score:</span>
+                  <span className="text-base font-bold text-gray-900">
+                    {selectedApplicantForReview.trustScorecard.rating} ★ ({selectedApplicantForReview.trustScorecard.onTimeDeliveryRate}% on-time)
+                  </span>
+                </div>
+              </div>
+
+              {/* Cover Letter */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                  Application Cover Letter
+                </h4>
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 text-xs text-gray-700 leading-relaxed">
+                  {selectedApplicantForReview.coverLetter}
+                </div>
+              </div>
+
+              {/* Technical Skills & Expertise */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                  Technical Expertise &amp; Verified Skills
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {(selectedApplicantForReview.freelancerProfile?.skills || [
+                    "React", "Next.js", "TypeScript", "Tailwind CSS", "FastAPI", "PostgreSQL"
+                  ]).map((skill, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-[#003087] border border-blue-200"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Work Experience & Education */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2">
+                  <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Briefcase className="w-3.5 h-3.5 text-[#0070E0]" />
+                    Work Experience ({selectedApplicantForReview.freelancerProfile?.experienceYears || 6} Years)
+                  </h5>
+                  <ul className="text-xs text-gray-600 space-y-1.5 list-disc list-inside">
+                    {(selectedApplicantForReview.freelancerProfile?.experience || [
+                      "Lead Frontend Engineer at Web3 FinTech (2023 - Present)",
+                      "Senior Software Developer at CloudScale Systems (2021 - 2023)"
+                    ]).map((exp, idx) => (
+                      <li key={idx}>{exp}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2">
+                  <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Award className="w-3.5 h-3.5 text-[#0070E0]" />
+                    Education &amp; Credentials
+                  </h5>
+                  <ul className="text-xs text-gray-600 space-y-1.5 list-disc list-inside">
+                    {(selectedApplicantForReview.freelancerProfile?.education || [
+                      "B.Tech in Computer Science, IIT Bombay (2018-2022)"
+                    ]).map((edu, idx) => (
+                      <li key={idx}>{edu}</li>
+                    ))}
+                    {(selectedApplicantForReview.freelancerProfile?.certifications || [
+                      "Certified Fintech Security Practitioner (2024)"
+                    ]).map((cert, idx) => (
+                      <li key={idx} className="text-emerald-700 font-medium">
+                        Cert: {cert}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Uploaded CV & Document View */}
+              <div className="p-4 rounded-2xl bg-blue-50/40 border border-blue-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileCheck className="w-4 h-4 text-[#0070E0]" />
+                    <span className="text-xs font-bold text-[#003087]">Uploaded CV / Resume Document</span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                    CV Attached &amp; Validated
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white p-3 rounded-xl border border-blue-100 text-xs">
+                  <div>
+                    <span className="font-bold text-gray-800 block">
+                      {selectedApplicantForReview.freelancerProfile?.cvFile?.name || "Vachan_Singh_Senior_FullStack_CV.pdf"}
+                    </span>
+                    <span className="text-[11px] text-gray-400">
+                      Uploaded {formatDate(selectedApplicantForReview.freelancerProfile?.cvFile?.uploadedAt || selectedApplicantForReview.createdAt)} • 148 KB
+                    </span>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-8 bg-blue-50 text-[#0070E0] border-blue-200 hover:bg-blue-100"
+                    onClick={() => setShowCVPreviewModal(true)}
+                  >
+                    <Eye className="w-3.5 h-3.5 mr-1" />
+                    View / Inspect CV
+                  </Button>
+                </div>
+
+                {/* CV Extracted Summary */}
+                {selectedApplicantForReview.freelancerProfile?.cvFile?.extractedInfo?.summary && (
+                  <p className="text-xs text-gray-600 bg-white p-3 rounded-xl border border-gray-100 leading-relaxed">
+                    <strong>CV Executive Summary:</strong> {selectedApplicantForReview.freelancerProfile.cvFile.extractedInfo.summary}
+                  </p>
+                )}
+              </div>
+
+              {/* AI-Assisted Candidate Analysis (Demo Advisory) */}
+              <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-200 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-purple-900">
+                    <Sparkles className="w-4 h-4 text-purple-600" />
+                    <span>AI-Assisted Candidate Analysis</span>
+                  </div>
+                  <Badge variant="inReview" size="sm">
+                    DEMO ADVISORY
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-[11px]">
+                  <div className="bg-white p-2.5 rounded-xl border border-purple-100">
+                    <span className="font-bold text-emerald-700 block mb-1">Skills Matching Project:</span>
+                    <p className="text-gray-600">
+                      Next.js 14, TypeScript, Tailwind CSS, Escrow architecture, and responsive UI engineering match 98% of project requirements.
+                    </p>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-purple-100">
+                    <span className="font-bold text-amber-700 block mb-1">Identified Focus Areas:</span>
+                    <p className="text-gray-600">
+                      No critical skill gaps identified. Candidate exhibits top on-time delivery (98%) and clean code certifications.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="p-6 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedApplicantForReview(null)}
+              >
+                Close Dossier
+              </Button>
+
+              {selectedApplicantForReview.status === "PENDING" && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-rose-600 hover:bg-rose-50"
+                    onClick={() => {
+                      handleDeclineCandidate(selectedApplicantForReview.id);
+                      setSelectedApplicantForReview(null);
+                    }}
+                  >
+                    Decline
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      handleAcceptCandidate(selectedApplicantForReview.id);
+                      setSelectedApplicantForReview(null);
+                    }}
+                  >
+                    <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                    Accept Candidate &amp; Lock Escrow
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: CV DOCUMENT VIEWER ── */}
+      {showCVPreviewModal && selectedApplicantForReview && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden space-y-4 p-6 animate-slide-up">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-[#0070E0]" />
+                <h3 className="font-bold text-base text-gray-900">
+                  CV Document: {selectedApplicantForReview.freelancerProfile?.cvFile?.name || "Vachan_Singh_Senior_FullStack_CV.pdf"}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowCVPreviewModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 space-y-4 text-xs font-mono">
+              <div className="border-b border-gray-200 pb-3">
+                <h2 className="text-base font-bold text-gray-900 font-sans">
+                  {selectedApplicantForReview.freelancerName}
+                </h2>
+                <p className="text-gray-500 font-sans">
+                  {selectedApplicantForReview.freelancerDomain} • 6 Years Professional Experience
+                </p>
+              </div>
+
+              <div>
+                <span className="font-bold text-[#003087] block mb-1">CORE TECHNICAL COMPETENCIES:</span>
+                <p className="text-gray-700">
+                  Next.js, React, TypeScript, Tailwind CSS, FastAPI, Python, PostgreSQL, Smart Contracts, Autonomous Escrow Architecture
+                </p>
+              </div>
+
+              <div>
+                <span className="font-bold text-[#003087] block mb-1">CAREER MILESTONES:</span>
+                <p className="text-gray-700">
+                  • Lead Frontend Engineer (Web3 FinTech) - Multi-party milestone escrow contracts &amp; responsive fintech dashboards<br />
+                  • Senior Software Developer (CloudScale) - Micro-frontends &amp; high-assurance API integration
+                </p>
+              </div>
+
+              <div>
+                <span className="font-bold text-[#003087] block mb-1">EDUCATION &amp; CERTIFICATIONS:</span>
+                <p className="text-gray-700">
+                  • Bachelor of Technology in Computer Science - IIT Bombay (CGPA 8.9/10)<br />
+                  • Certified Fintech Security Practitioner (FSI-2024)<br />
+                  • AWS Certified Solutions Architect - Associate
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setShowCVPreviewModal(false)}>
+                Close Preview
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

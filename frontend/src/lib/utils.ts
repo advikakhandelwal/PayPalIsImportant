@@ -11,18 +11,21 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Formats a monetary amount with configurable currency symbols and international formatting.
+ * Defaults to INR (₹) using Indian numbering conventions (en-IN).
  */
-export function formatCurrency(amount: number, currency = "USD"): string {
+export function formatCurrency(amount: number, currency = "INR"): string {
   try {
-    return new Intl.NumberFormat("en-US", {
+    const curr = (currency || "INR").toUpperCase();
+    const locale = curr === "INR" ? "en-IN" : "en-US";
+    return new Intl.NumberFormat(locale, {
       style: "currency",
-      currency: currency.toUpperCase(),
+      currency: curr,
       maximumFractionDigits: 0,
       minimumFractionDigits: 0,
     }).format(amount);
   } catch {
     // Fallback if currency code is non-standard
-    return `${currency.toUpperCase()} ${amount.toLocaleString()}`;
+    return `${(currency || "INR").toUpperCase()} ${amount.toLocaleString("en-IN")}`;
   }
 }
 

@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 
 export default function HomePage() {
-  const { activeRole, setActiveRole, toggleRole } = useAuth();
+  const { activeRole, setActiveRole, toggleRole, isHydrated } = useAuth();
   const { activeContract } = useMarketplace();
 
   const escrowStatusInfo = getEscrowStatusInfo(activeContract.escrowStatus);
@@ -79,117 +79,6 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* Interactive Escrow Mockup / Window Frame */}
-          <div className="relative w-full max-w-5xl mx-auto">
-            <div className="absolute -inset-1 bg-gradient-to-r from-[#0070E0] to-[#003087] rounded-2xl blur opacity-20" />
-            <div className="relative bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden text-left">
-              {/* Window Header */}
-              <div className="bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-                <div className="flex gap-1.5 items-center">
-                  <div className="w-3 h-3 rounded-full bg-rose-400" />
-                  <div className="w-3 h-3 rounded-full bg-amber-400" />
-                  <div className="w-3 h-3 rounded-full bg-emerald-400" />
-                </div>
-                <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
-                  <Lock className="w-3 h-3 text-[#0070E0]" />
-                  Active Escrow Dashboard • Live Contract Preview
-                </div>
-                <div className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                  {escrowStatusInfo.label}
-                </div>
-              </div>
-
-              {/* Window Content: Live Escrow Metrics */}
-              <div className="p-6 sm:p-8 space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-gray-100">
-                  <div>
-                    <h3 className="text-xl sm:text-2xl font-bold text-[#003087]">
-                      {activeContract.projectTitle}
-                    </h3>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Client: <strong className="text-gray-800">{activeContract.clientName}</strong> • Freelancer:{" "}
-                      <strong className="text-gray-800">{activeContract.freelancerName}</strong>
-                    </p>
-                  </div>
-                  <div className="text-left sm:text-right">
-                    <span className="text-[11px] text-gray-400 uppercase tracking-wider font-bold block">Total Budget</span>
-                    <p className="text-2xl font-extrabold text-[#003087]">
-                      {formatCurrency(activeContract.totalBudget, activeContract.currency)}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Balances */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-100">
-                    <span className="text-xs text-gray-500 font-medium block">Locked in Escrow</span>
-                    <span className="text-xl font-bold text-[#003087]">
-                      {formatCurrency(activeContract.heldInEscrowAmount, activeContract.currency)}
-                    </span>
-                  </div>
-                  <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-100">
-                    <span className="text-xs text-gray-500 font-medium block">Released to Talent</span>
-                    <span className="text-xl font-bold text-emerald-600">
-                      {formatCurrency(activeContract.releasedAmount, activeContract.currency)}
-                    </span>
-                  </div>
-                  <div className="p-4 rounded-xl bg-gray-50 border border-gray-200">
-                    <span className="text-xs text-gray-500 font-medium block">Milestone Progress</span>
-                    <span className="text-xl font-bold text-[#0070E0]">
-                      {Math.round((activeContract.releasedAmount / activeContract.totalBudget) * 100)}% Settled
-                    </span>
-                  </div>
-                </div>
-
-                {/* Milestones Preview */}
-                <div className="space-y-3 pt-2">
-                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block">
-                    Sequential Milestones
-                  </span>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {activeContract.milestones.map((ms) => {
-                      const statusInfo = getMilestoneStatusInfo(ms.status);
-                      return (
-                        <div
-                          key={ms.id}
-                          className={`p-4 rounded-xl border transition-all ${
-                            ms.status === "ACTIVE"
-                              ? "border-[#0070E0] bg-blue-50/30 ring-1 ring-[#0070E0]"
-                              : ms.status === "RELEASED"
-                              ? "border-emerald-200 bg-emerald-50/20"
-                              : "border-gray-200 bg-white"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-bold text-gray-400">Step {ms.stepNumber}</span>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                ms.status === "RELEASED"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : ms.status === "ACTIVE"
-                                  ? "bg-blue-100 text-[#0070E0]"
-                                  : "bg-gray-100 text-gray-600"
-                              }`}
-                            >
-                              {statusInfo.label}
-                            </span>
-                          </div>
-                          <h4 className="text-sm font-bold text-gray-900 truncate">{ms.title}</h4>
-                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">{ms.description}</p>
-                          <div className="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
-                            <span className="font-bold text-gray-800">
-                              {formatCurrency(ms.paymentAmount, ms.currency)} ({ms.percentage}%)
-                            </span>
-                            <span className="text-gray-400 text-[11px]">Due {formatDate(ms.deadline)}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -211,10 +100,10 @@ export default function HomePage() {
             {/* Freelancer Portal Card */}
             <div
               className={`group relative p-8 sm:p-10 rounded-3xl border bg-gray-50/50 card-hover transition-all ${
-                activeRole === "FREELANCER" ? "border-[#0070E0] ring-2 ring-[#0070E0]/20 bg-blue-50/10" : "border-gray-100"
+                isHydrated && activeRole === "FREELANCER" ? "border-[#0070E0] ring-2 ring-[#0070E0]/20 bg-blue-50/10" : "border-gray-100"
               }`}
             >
-              {activeRole === "FREELANCER" && (
+              {isHydrated && activeRole === "FREELANCER" && (
                 <div className="absolute top-6 right-8">
                   <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
                     Active
@@ -267,10 +156,10 @@ export default function HomePage() {
             {/* Client Portal Card */}
             <div
               className={`group relative p-8 sm:p-10 rounded-3xl border bg-gray-50/50 card-hover transition-all ${
-                activeRole === "CLIENT" ? "border-[#003087] ring-2 ring-[#003087]/20 bg-blue-50/10" : "border-gray-100"
+                isHydrated && activeRole === "CLIENT" ? "border-[#003087] ring-2 ring-[#003087]/20 bg-blue-50/10" : "border-gray-100"
               }`}
             >
-              {activeRole === "CLIENT" && (
+              {isHydrated && activeRole === "CLIENT" && (
                 <div className="absolute top-6 right-8">
                   <span className="px-3 py-1 rounded-full bg-blue-100 text-[#003087] text-[10px] font-bold uppercase tracking-wider">
                     Active
@@ -626,18 +515,18 @@ export default function HomePage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
               href="/auth/signup"
-              id="cta-start-trial"
+              id="cta-get-started"
               className="btn-shadow bg-[#0070E0] hover:bg-[#005bb8] text-white px-8 sm:px-10 py-4 rounded-full font-bold text-base transition-all w-full sm:w-auto"
             >
-              Start Free Trial
+              Get Started
             </Link>
 
             <Link
               href="/auth/login"
-              id="cta-request-demo"
+              id="cta-account-login"
               className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-8 sm:px-10 py-4 rounded-full font-bold text-base transition-all w-full sm:w-auto"
             >
-              Request Demo
+              Sign In
             </Link>
           </div>
         </div>
