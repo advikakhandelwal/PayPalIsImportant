@@ -42,6 +42,11 @@ class Submission(Base):
     quality_grade = Column(String(20), nullable=True)          # 'Grade A', 'Grade B', etc.
     ai_verification_report = Column(JSON, nullable=True)        # Checklist, findings, feedback
 
+    # Deliverable Revision Tracking (Phase 5B)
+    revision_number = Column(Integer, nullable=False, default=1)
+    review_status = Column(String(50), nullable=False, default="IN_REVIEW")
+    revision_request = Column(JSON, nullable=True)
+
     # Timestamp
     submitted_at = Column(DateTime(timezone=True), server_default=func.now())
 
