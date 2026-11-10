@@ -9,6 +9,21 @@
 // ==========================================
 export type UserRole = 'CLIENT' | 'FREELANCER';
 
+export interface FreelancerCV {
+  name: string;
+  size?: number;
+  uploadedAt: string;
+  url?: string;
+  extractedInfo?: {
+    skills: string[];
+    education: string[];
+    experience: string[];
+    previousProjects: string[];
+    certifications: string[];
+    summary: string;
+  };
+}
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -25,6 +40,17 @@ export interface UserProfile {
   companyName?: string;
   companyDescription?: string;
   isNewMember?: boolean;
+  // Client location and address fields:
+  country?: string;
+  state?: string;
+  city?: string;
+  address?: string; // complete business/company address
+  postalCode?: string;
+  isAddressVerified?: boolean;
+  // Freelancer profile extensions:
+  education?: string[];
+  certifications?: string[];
+  cvFile?: FreelancerCV;
 }
 
 // ==========================================
@@ -36,7 +62,7 @@ export interface TrustScorecardData {
   complianceScore: number; // percentage 0 - 100
   completedProjects: number;
   totalEarningsOrSpent: number;
-  currency: string; // e.g., 'USD', 'EUR', 'GBP'
+  currency: string; // e.g., 'INR', 'USD', 'EUR'
   badges: Array<'Verified Creator' | 'Clean Code Certified' | 'Top Timeliness' | 'Escrow Protected'>;
 }
 
@@ -52,6 +78,19 @@ export type MilestoneStatus =
   | 'DISPUTED'
   | 'RELEASED';
 
+export interface MilestoneSubtask {
+  id: string;
+  stepNumber: string; // e.g. "1.1", "1.2"
+  title: string;
+  description: string;
+  percentageOfMilestone: number; // proportional % of parent milestone
+  percentageOfTotal: number; // share of total project value
+  paymentAmount: number; // calculated currency value
+  currency: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  aiReasoning?: string;
+}
+
 export interface Milestone {
   id: string;
   stepNumber: number;
@@ -66,6 +105,13 @@ export interface Milestone {
   submission?: DeliverableSubmission;
   submissionHistory?: DeliverableSubmission[];
   latestRevisionRequest?: RevisionRequest;
+  // AI-assisted internal subtasks:
+  subtasks?: MilestoneSubtask[];
+  subtasksApproved?: boolean;
+  aiSubdivisionReasoning?: string;
+  // Milestone revision limit tracking (max 3):
+  revisionCount?: number;
+  maxRevisionsReached?: boolean;
 }
 
 export type ProjectStatus = 'OPEN' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
@@ -88,6 +134,12 @@ export interface Project {
   requiredSkills?: string[];
   experienceLevel?: string;
   additionalRequirements?: string;
+  clientLocation?: {
+    city?: string;
+    state?: string;
+    country?: string;
+    isAddressVerified?: boolean;
+  };
 }
 
 // ==========================================
@@ -107,6 +159,19 @@ export interface Application {
   status: ApplicationStatus;
   createdAt: string;
   trustScorecard: TrustScorecardData;
+  // Complete Freelancer dossier for client review before selection:
+  freelancerProfile?: {
+    name?: string;
+    avatarUrl?: string;
+    skills?: string[];
+    experienceYears?: number;
+    education?: string[];
+    experience?: string[];
+    portfolioLinks?: string[];
+    certifications?: string[];
+    cvFile?: FreelancerCV;
+  };
+  estimatedDeliveryDays?: number;
   // AI-assisted recommendation (Advisory only - Human makes the decision)
   aiRecommendation?: {
     fitScore: number; // 0 - 100

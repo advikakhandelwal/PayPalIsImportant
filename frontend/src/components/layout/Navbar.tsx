@@ -195,24 +195,16 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center gap-2 sm:gap-3">
             {isHydrated ? (
               <>
-                {/* 1. Back to Dashboard Button */}
-                <Link
-                  href={activeDashboardHref}
-                  className="flex items-center gap-2 bg-blue-50 hover:bg-blue-100/80 text-[#0070E0] px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all border border-blue-200/60 shadow-xs group cursor-pointer"
-                >
-                  <LayoutDashboard className="w-3.5 h-3.5 text-[#0070E0]" />
-                  <span className="whitespace-nowrap">Back to Dashboard</span>
-                </Link>
-
-                {/* 2. Switch Account Button (for dual-role users) */}
-                <button
-                  onClick={handleSwitchAccount}
-                  className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-gray-600 hover:text-[#003087] bg-gray-50 hover:bg-gray-100 px-3 py-2 rounded-full border border-gray-200 transition-all cursor-pointer whitespace-nowrap shadow-2xs"
-                  title={`Switch to ${otherRoleLabel} account`}
-                >
-                  <ArrowRightLeft className="w-3.5 h-3.5 text-[#0070E0]" />
-                  <span>Switch to {otherRoleLabel}</span>
-                </button>
+                {/* 1. Back to Dashboard Button (Hidden on Landing Page) */}
+                {!isLandingPage && (
+                  <Link
+                    href={activeDashboardHref}
+                    className="flex items-center gap-2 bg-blue-50 hover:bg-blue-100/80 text-[#0070E0] px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all border border-blue-200/60 shadow-xs group cursor-pointer"
+                  >
+                    <LayoutDashboard className="w-3.5 h-3.5 text-[#0070E0]" />
+                    <span className="whitespace-nowrap">Back to Dashboard</span>
+                  </Link>
+                )}
 
                 {/* 3. Global Notification Bell with Dropdown */}
                 <div className="relative" ref={notifRef}>
@@ -355,13 +347,15 @@ export const Navbar: React.FC = () => {
               <div className="pt-4 border-t border-gray-100 flex flex-col gap-2">
                 {isHydrated && (
                   <>
-                    <Link
-                      href={activeDashboardHref}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-[#0070E0] bg-blue-50 border border-blue-200 rounded-full"
-                    >
-                      <LayoutDashboard className="w-4 h-4" />
-                      Back to Dashboard
-                    </Link>
+                    {!isLandingPage && (
+                      <Link
+                        href={activeDashboardHref}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-[#0070E0] bg-blue-50 border border-blue-200 rounded-full"
+                      >
+                        <LayoutDashboard className="w-4 h-4" />
+                        Back to Dashboard
+                      </Link>
+                    )}
 
                     <Link
                       href="/notifications"
@@ -375,14 +369,6 @@ export const Navbar: React.FC = () => {
                         </span>
                       )}
                     </Link>
-
-                    <button
-                      onClick={handleSwitchAccount}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-full cursor-pointer hover:bg-gray-100"
-                    >
-                      <ArrowRightLeft className="w-4 h-4 text-[#0070E0]" />
-                      Switch to {otherRoleLabel} Account
-                    </button>
                   </>
                 )}
 

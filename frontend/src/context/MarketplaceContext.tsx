@@ -58,6 +58,12 @@ interface MarketplaceContextType {
       requestedBy?: string;
     } | string
   ) => void;
+  updateSubtaskStatus: (
+    contractId: string,
+    milestoneId: string,
+    subtaskId: string,
+    status: "PENDING" | "IN_PROGRESS" | "COMPLETED"
+  ) => void;
 }
 
 const MarketplaceContext = createContext<MarketplaceContextType | undefined>(undefined);
@@ -344,6 +350,10 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
             milestones: contract.milestones.map((ms) => {
               if (ms.id !== milestoneId) return ms;
 
+              const currentRevs = ms.revisionCount || 0;
+              if (currentRevs >= 3) return ms;
+              const newCount = currentRevs + 1;
+
               const feedbackText =
                 typeof revisionData === "string"
                   ? revisionData
@@ -399,6 +409,36 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 submission: updatedSubmission,
                 submissionHistory: updatedHistory,
                 latestRevisionRequest: revisionReq,
+                revisionCount: newCount,
+                maxRevisionsReached: newCount >= 3,
+              };
+            }),
+          };
+        })
+      );
+    },
+    []
+  );
+
+  const updateSubtaskStatus = useCallback(
+    (
+      contractId: string,
+      milestoneId: string,
+      subtaskId: string,
+      status: "PENDING" | "IN_PROGRESS" | "COMPLETED"
+    ) => {
+      setContracts((prev) =>
+        prev.map((contract) => {
+          if (contract.id !== contractId) return contract;
+          return {
+            ...contract,
+            milestones: contract.milestones.map((ms) => {
+              if (ms.id !== milestoneId || !ms.subtasks) return ms;
+              return {
+                ...ms,
+                subtasks: ms.subtasks.map((st) =>
+                  st.id === subtaskId ? { ...st, status } : st
+                ),
               };
             }),
           };
@@ -423,6 +463,7 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
         submitDeliverable,
         approveMilestone,
         requestMilestoneRevision,
+        updateSubtaskStatus,
       }}
     >
       {children}

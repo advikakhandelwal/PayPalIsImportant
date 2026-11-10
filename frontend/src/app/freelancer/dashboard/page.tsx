@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { formatCurrency, formatDate, getMilestoneStatusInfo, getEscrowStatusInfo } from "@/lib/utils";
-import { MilestoneStatus, DeliverableSubmission, Project } from "@/types";
+import { MilestoneStatus, DeliverableSubmission, Project, MilestoneSubtask, FreelancerCV } from "@/types";
 import {
   LayoutDashboard,
   Search,
@@ -44,6 +44,9 @@ import {
   Building,
   History,
   ChevronDown,
+  MapPin,
+  Download,
+  UploadCloud,
 } from "lucide-react";
 
 type FreelancerTab = "overview" | "projects" | "applications" | "contracts" | "profile" | "scorecard";
@@ -60,6 +63,7 @@ function FreelancerDashboardContent() {
     activeContract,
     submitApplication,
     submitDeliverable,
+    updateSubtaskStatus,
   } = useMarketplace();
 
   // Frontend UI route guard: show access-denied state if wrong role
@@ -237,8 +241,67 @@ function FreelancerDashboardContent() {
     (a) => a.freelancerId === currentUser.id || a.freelancerName === currentUser.name
   );
 
-  // Handle Apply Form
+  // CV Upload Enforcement States
+  const [showCVPromptModal, setShowCVPromptModal] = useState<boolean>(false);
+  const [pendingApplyProject, setPendingApplyProject] = useState<Project | null>(null);
+  const [cvSuccessMsg, setCvSuccessMsg] = useState<string>("");
+
+  // Handler to simulate or process CV upload
+  const handleUploadCV = (fileName = "Vachan_Singh_FullStack_2026.pdf", fileSize = 152000) => {
+    const newCV: FreelancerCV = {
+      name: fileName,
+      size: fileSize,
+      uploadedAt: new Date().toISOString(),
+      url: "/demo/" + fileName,
+      extractedInfo: {
+        skills: currentUser.skills && currentUser.skills.length > 0
+          ? currentUser.skills
+          : ["Next.js 14", "React 18", "TypeScript", "Tailwind CSS", "FastAPI", "Python", "PostgreSQL", "Escrow Protocols"],
+        education: [
+          "B.Tech in Computer Science - IIT Bombay (CGPA 8.9/10)"
+        ],
+        experience: [
+          "Lead Frontend Engineer at Web3 FinTech (2023 - Present) - Built multi-party escrow release dashboards",
+          "Senior Software Developer at CloudScale Systems (2021 - 2023) - Architected responsive Next.js apps with 99.9% uptime"
+        ],
+        previousProjects: [
+          "Autonomous Milestone Escrow Portal - Next.js & TypeScript",
+          "AI-assisted Verification Pipeline - Python & Webhooks"
+        ],
+        certifications: [
+          "Certified Fintech Security Practitioner - FSI Council",
+          "AWS Certified Solutions Architect - Associate"
+        ],
+        summary: "6+ years experienced full-stack engineer specialized in high-assurance financial interfaces, milestone escrow mechanisms, and responsive frontend systems."
+      }
+    };
+
+    updateProfile({
+      cvFile: newCV,
+    });
+
+    setCvSuccessMsg("CV successfully uploaded and verified. Credentials saved to your profile.");
+    setTimeout(() => setCvSuccessMsg(""), 3500);
+
+    // If an apply action was pending, auto-advance to application form
+    if (pendingApplyProject) {
+      const proj = pendingApplyProject;
+      setPendingApplyProject(null);
+      setShowCVPromptModal(false);
+      setSelectedProjectForApply(proj);
+      setBidAmount(proj.totalBudget);
+      setCoverLetter("");
+      setApplicationSuccessMsg("");
+    }
+  };
+
+  // Handle Apply Form (enforces CV check)
   const handleOpenApplyModal = (proj: Project) => {
+    if (!currentUser.cvFile) {
+      setPendingApplyProject(proj);
+      setShowCVPromptModal(true);
+      return;
+    }
     setSelectedProjectForApply(proj);
     setBidAmount(proj.totalBudget);
     setCoverLetter("");
@@ -259,6 +322,21 @@ function FreelancerDashboardContent() {
       currency: selectedProjectForApply.currency,
       status: "PENDING",
       trustScorecard: currentUser.trustScorecard,
+      freelancerProfile: {
+        name: currentUser.name,
+        avatarUrl: currentUser.avatarUrl,
+        skills: currentUser.skills,
+        experienceYears: currentUser.experienceYears || 6,
+        education: currentUser.education || ["B.Tech in Computer Science, IIT Bombay (2018-2022)"],
+        experience: [
+          "Lead Frontend Engineer at Web3 FinTech (2023 - Present)",
+          "Senior Software Developer at CloudScale Systems (2021 - 2023)"
+        ],
+        portfolioLinks: currentUser.portfolioLinks,
+        certifications: currentUser.certifications || ["Certified Fintech Security Practitioner (2024)", "AWS Certified Solutions Architect"],
+        cvFile: currentUser.cvFile,
+      },
+      estimatedDeliveryDays: 14,
     });
 
     setApplicationSuccessMsg("Application submitted successfully! You can track it under 'My Applications'.");
@@ -882,13 +960,23 @@ function FreelancerDashboardContent() {
                   </h3>
 
                   {/* Client Info & Date Posted */}
-                  <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                  <div className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
                     <span>
                       Posted by <strong className="text-slate-700">{p.clientCompany || p.clientName}</strong>
                     </span>
                     <span>•</span>
-                    <span>{formatDate(p.createdAt)}</span>
-                  </p>
+                    {p.clientLocation?.city ? (
+                      <span className="inline-flex items-center gap-1 text-slate-600 font-medium">
+                        <MapPin className="w-3.5 h-3.5 text-paypal-blue" />
+                        {p.clientLocation.city}, {p.clientLocation.state}, {p.clientLocation.country}
+                        <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          {p.clientLocation.isAddressVerified ? "Verified Address" : "Address Provided"}
+                        </span>
+                      </span>
+                    ) : (
+                      <span>{formatDate(p.createdAt)}</span>
+                    )}
+                  </div>
 
                   {/* Description */}
                   <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed mt-3">
@@ -1190,6 +1278,8 @@ function FreelancerDashboardContent() {
                 <div className="space-y-4">
                   {selectedContractForTab.milestones.map((ms) => {
                     const statusInfo = getMilestoneStatusInfo(ms.status);
+                    const completedSubtasksCount = ms.subtasks ? ms.subtasks.filter(s => s.status === 'COMPLETED').length : 0;
+                    const totalSubtasksCount = ms.subtasks ? ms.subtasks.length : 0;
                     return (
                       <div
                         key={ms.id}
@@ -1224,6 +1314,87 @@ function FreelancerDashboardContent() {
                           </ul>
                         </div>
 
+                        {/* Internal Subtasks Progress Tracker (AI-Assisted) */}
+                        {ms.subtasks && ms.subtasks.length > 0 && (
+                          <div className="mb-3.5 p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-bold text-paypal-dark flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                                Internal Subtask Division ({completedSubtasksCount}/{totalSubtasksCount} Completed)
+                              </span>
+                              <span className="text-slate-500 font-semibold">
+                                {totalSubtasksCount > 0 ? Math.round((completedSubtasksCount / totalSubtasksCount) * 100) : 0}% Progress
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {ms.subtasks.map((st) => (
+                                <div
+                                  key={st.id}
+                                  className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
+                                    st.status === 'COMPLETED'
+                                      ? 'bg-emerald-50/60 border-emerald-200'
+                                      : st.status === 'IN_PROGRESS'
+                                      ? 'bg-blue-50/60 border-blue-200'
+                                      : 'bg-white border-slate-200'
+                                  }`}
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-extrabold text-paypal-dark text-[10px]">{st.stepNumber}</span>
+                                      <span className="font-medium text-slate-800 truncate">{st.title}</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-500 block mt-0.5">
+                                      {st.percentageOfTotal}% total ({formatCurrency(st.paymentAmount, ms.currency)})
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const next = st.status === 'PENDING' ? 'IN_PROGRESS' : st.status === 'IN_PROGRESS' ? 'COMPLETED' : 'PENDING';
+                                      updateSubtaskStatus(selectedContractForTab.id, ms.id, st.id, next);
+                                    }}
+                                    className="cursor-pointer shrink-0"
+                                    title="Click to toggle status (PENDING -> IN PROGRESS -> COMPLETED)"
+                                  >
+                                    <Badge
+                                      variant={
+                                        st.status === 'COMPLETED'
+                                          ? 'success'
+                                          : st.status === 'IN_PROGRESS'
+                                          ? 'inReview'
+                                          : 'neutral'
+                                      }
+                                      size="sm"
+                                    >
+                                      {st.status.replace('_', ' ')}
+                                    </Badge>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Client Revision Request Alert if revisions were requested */}
+                        {ms.status === "REVISION_REQUESTED" && ms.latestRevisionRequest && (
+                          <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 text-xs space-y-2 mb-3">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                                <AlertCircle className="w-4 h-4 text-amber-600" />
+                                Revision Request ({ms.revisionCount || 1} of 3)
+                              </span>
+                              <span className="text-[11px] text-amber-700">
+                                Requested {formatDate(ms.latestRevisionRequest.requestedAt)}
+                              </span>
+                            </div>
+                            <p className="text-amber-800 leading-relaxed bg-white/80 p-2.5 rounded-lg border border-amber-200">
+                              <strong>Client Feedback:</strong> {ms.latestRevisionRequest.feedback}
+                            </p>
+                          </div>
+                        )}
+
                         {/* Submission / Verification Preview */}
                         {ms.submission && (
                           <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs space-y-2 mb-3">
@@ -1256,11 +1427,22 @@ function FreelancerDashboardContent() {
                             <span className="text-slate-400 ml-2">Deadline: {formatDate(ms.deadline)}</span>
                           </div>
 
-                          {/* Submit Deliverable Button if Active */}
+                          {/* Submit Deliverable Button if Active or Revision Requested */}
                           {ms.status === "ACTIVE" && (
                             <Button variant="primary" size="sm" onClick={() => handleOpenSubmitModal(ms.id)}>
                               <Upload className="w-3.5 h-3.5 mr-1.5" />
                               Submit Deliverable
+                            </Button>
+                          )}
+                          {ms.status === "REVISION_REQUESTED" && (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              className="bg-amber-600 hover:bg-amber-700 text-white"
+                              onClick={() => handleOpenSubmitModal(ms.id, true)}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                              Submit Revised Deliverable (Revision {ms.revisionCount || 1}/3)
                             </Button>
                           )}
                         </div>
@@ -1386,6 +1568,129 @@ function FreelancerDashboardContent() {
                     </Button>
                   </div>
                 </form>
+              )}
+            </CardContent>
+          </Card>
+          {/* CV & Verified Resume Section */}
+          <Card className="border-slate-200 shadow-sm rounded-2xl overflow-hidden mt-6">
+            <CardHeader className="bg-slate-50 border-b border-slate-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-paypal-blue flex items-center justify-center font-bold">
+                    <FileCheck className="w-5 h-5 text-paypal-blue" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base text-slate-900">CV &amp; Verified Professional Resume</CardTitle>
+                    <CardDescription className="text-xs">
+                      Required before starting your first project. Used by hiring clients to evaluate technical fit.
+                    </CardDescription>
+                  </div>
+                </div>
+
+                <Badge variant={currentUser.cvFile ? "success" : "warning"} size="sm">
+                  {currentUser.cvFile ? "CV Uploaded & Active" : "No CV Uploaded"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-6">
+              {cvSuccessMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>{cvSuccessMsg}</span>
+                </div>
+              )}
+
+              {currentUser.cvFile ? (
+                <div className="space-y-4 text-xs">
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-paypal-blue">
+                        <FileCheck className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-900 block text-sm">{currentUser.cvFile.name}</span>
+                        <span className="text-[11px] text-slate-500">
+                          Uploaded {formatDate(currentUser.cvFile.uploadedAt)} • {(currentUser.cvFile.size ? Math.round(currentUser.cvFile.size / 1024) : 148)} KB
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleUploadCV("Vachan_Singh_FullStack_Updated_2026.pdf", 165000)}
+                        className="text-xs"
+                      >
+                        <UploadCloud className="w-3.5 h-3.5 mr-1 text-paypal-blue" />
+                        Replace / Update CV
+                      </Button>
+                    </div>
+                  </div>
+
+                  {currentUser.cvFile.extractedInfo && (
+                    <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-200 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-purple-900 flex items-center gap-1.5 text-xs">
+                          <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                          Parsed Resume Credentials (AI Advisory Summary)
+                        </span>
+                        <span className="text-[10px] text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full font-semibold">
+                          DEMO ADVISORY
+                        </span>
+                      </div>
+
+                      <p className="text-slate-700 text-xs leading-relaxed">
+                        {currentUser.cvFile.extractedInfo.summary}
+                      </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-[11px]">
+                        <div>
+                          <strong className="text-slate-800 block mb-1">Extracted Technical Skills:</strong>
+                          <div className="flex flex-wrap gap-1">
+                            {currentUser.cvFile.extractedInfo.skills.map((sk, idx) => (
+                              <span key={idx} className="px-2 py-0.5 rounded bg-white border border-purple-200 text-purple-900 font-medium">
+                                {sk}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <strong className="text-slate-800 block mb-1">Verified Experience &amp; Degrees:</strong>
+                          <ul className="text-slate-600 space-y-0.5 list-disc list-inside">
+                            {currentUser.cvFile.extractedInfo.education.map((ed, idx) => (
+                              <li key={idx}>{ed}</li>
+                            ))}
+                            {currentUser.cvFile.extractedInfo.certifications.map((ct, idx) => (
+                              <li key={idx} className="text-emerald-700">{ct}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-6 text-center rounded-xl border border-dashed border-slate-300 bg-slate-50 space-y-3">
+                  <UploadCloud className="w-10 h-10 text-slate-400 mx-auto" />
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800">No CV / Resume on File</h4>
+                    <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                      Uploading your CV allows clients to inspect your qualifications and is required before submitting project proposals.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={() => handleUploadCV("Vachan_Singh_FullStack_2026.pdf", 148500)}
+                  >
+                    <UploadCloud className="w-3.5 h-3.5 mr-1.5" />
+                    Upload CV Document (.pdf / .docx)
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -1617,6 +1922,56 @@ function FreelancerDashboardContent() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CV REQUIRED PROMPT MODAL (Blocks applying/starting before CV upload) */}
+      {showCVPromptModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden space-y-4 p-6 animate-slide-up text-center">
+            <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 mx-auto">
+              <UploadCloud className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-bold text-slate-900">CV / Resume Required</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Platform escrow governance requires verified freelancers to have an uploaded CV/Resume before starting or applying to their first project.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-left space-y-2">
+              <span className="font-bold text-slate-800 block">Why is this required?</span>
+              <ul className="text-slate-600 space-y-1 list-disc list-inside text-[11px]">
+                <li>Verifies technical credentials for escrow milestone allocation</li>
+                <li>Allows hiring clients to review code, architecture &amp; certifications</li>
+                <li>Upload once — credentials persist across all future projects</li>
+              </ul>
+            </div>
+
+            <div className="pt-2 flex flex-col gap-2">
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => handleUploadCV("Vachan_Singh_FullStack_2026.pdf", 148500)}
+                className="w-full justify-center"
+              >
+                <UploadCloud className="w-4 h-4 mr-1.5" />
+                Upload &amp; Continue Application
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowCVPromptModal(false);
+                  setPendingApplyProject(null);
+                }}
+                className="text-xs text-slate-500"
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
         </div>
       )}
