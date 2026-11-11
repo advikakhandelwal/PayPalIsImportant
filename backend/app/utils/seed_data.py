@@ -25,6 +25,7 @@ if backend_dir not in sys.path:
 
 from app.database import SessionLocal, engine, Base
 from app.models.user import User, UserRole
+from app.core.security import hash_password
 from app.models.project import Project, ProjectStatus, ListingType
 from app.models.contract import Contract, EscrowStatus
 from app.models.milestone import Milestone, MilestoneStatus
@@ -32,11 +33,22 @@ from app.models.submission import Submission, SubmissionType, VerificationStatus
 from app.models.application import Application, ApplicationStatus
 
 
+def is_production_environment() -> bool:
+    """Normalizes environment detection: treats 'production', 'prod', and case variations as production."""
+    env = os.getenv("ENVIRONMENT", "development").strip().lower()
+    return env in ("production", "prod")
+
+
 def seed_demo_data(session=None) -> bool:
     """
     Idempotently populates the database with demo users, projects, contracts, and applications.
-    Returns True if seeding occurred, False if data was already present.
+    Returns True if seeding occurred, False if data was already present or aborted.
+    Strictly prohibited in production environments (production, prod).
     """
+    if is_production_environment():
+        print("⚠️ Demo seeding aborted: strictly prohibited in production environments (ENVIRONMENT is set to production/prod).")
+        return False
+
     db = session or SessionLocal()
     created_any = False
 
@@ -47,12 +59,14 @@ def seed_demo_data(session=None) -> bool:
         # -------------------------------------------------------------------
         # 1. Demo Users
         # -------------------------------------------------------------------
+        demo_hashed_password = hash_password("DemoPass123!")
+
         client = db.query(User).filter(User.email == "contracts@acmeventures.com").first()
         if not client:
             client = User(
                 name="Acme Global Ventures",
                 email="contracts@acmeventures.com",
-                hashed_password="mock_hashed_secret_for_demo_client",
+                hashed_password=demo_hashed_password,
                 role=UserRole.CLIENT,
                 domain="Fintech & Autonomous Commerce",
                 company_name="Acme Corp",
@@ -69,13 +83,16 @@ def seed_demo_data(session=None) -> bool:
             db.refresh(client)
             created_any = True
             print("  Created demo client: Acme Global Ventures")
+        elif client.hashed_password.startswith("mock_hashed_secret_"):
+            client.hashed_password = demo_hashed_password
+            db.commit()
 
         freelancer = db.query(User).filter(User.email == "vachan@talent.trustpay.ai").first()
         if not freelancer:
             freelancer = User(
                 name="Vachan Singh rajpurohit",
                 email="vachan@talent.trustpay.ai",
-                hashed_password="mock_hashed_secret_for_demo_freelancer",
+                hashed_password=demo_hashed_password,
                 role=UserRole.FREELANCER,
                 domain="Full-Stack & Smart Escrow UI",
                 bio="Senior Frontend Engineer specializing in Next.js, fintech dashboards, and accessible UI engineering.",
@@ -91,13 +108,16 @@ def seed_demo_data(session=None) -> bool:
             db.refresh(freelancer)
             created_any = True
             print("  Created demo freelancer: Vachan Singh rajpurohit")
+        elif freelancer.hashed_password.startswith("mock_hashed_secret_"):
+            freelancer.hashed_password = demo_hashed_password
+            db.commit()
 
         second_freelancer = db.query(User).filter(User.email == "alex@talent.trustpay.ai").first()
         if not second_freelancer:
             second_freelancer = User(
                 name="Alex Chen",
                 email="alex@talent.trustpay.ai",
-                hashed_password="mock_hashed_secret_for_alex",
+                hashed_password=demo_hashed_password,
                 role=UserRole.FREELANCER,
                 domain="Full-Stack Development",
                 bio="10+ years of React and Python development experience.",
@@ -112,6 +132,9 @@ def seed_demo_data(session=None) -> bool:
             db.commit()
             db.refresh(second_freelancer)
             created_any = True
+        elif second_freelancer.hashed_password.startswith("mock_hashed_secret_"):
+            second_freelancer.hashed_password = demo_hashed_password
+            db.commit()
 
         # -------------------------------------------------------------------
         # 2. Demo Projects

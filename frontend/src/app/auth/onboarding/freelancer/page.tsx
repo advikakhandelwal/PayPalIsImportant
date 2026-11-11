@@ -32,7 +32,7 @@ export default function FreelancerOnboardingPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
@@ -45,14 +45,18 @@ export default function FreelancerOnboardingPage() {
 
     const linksArray = portfolioLink.trim() ? [portfolioLink.trim()] : [];
 
-    updateProfile({
-      name: name.trim(),
-      domain: domain.trim(),
-      bio: bio.trim(),
-      skills: skillsArray,
-      experienceYears: parseInt(experienceYears, 10) || 0,
-      portfolioLinks: linksArray,
-    });
+    try {
+      await updateProfile({
+        name: name.trim(),
+        domain: domain.trim(),
+        bio: bio.trim(),
+        skills: skillsArray,
+        experienceYears: parseInt(experienceYears, 10) || 0,
+        portfolioLinks: linksArray,
+      });
+    } catch {
+      // ignore
+    }
 
     // Redirect to Freelancer Dashboard as required
     router.push("/freelancer/dashboard");

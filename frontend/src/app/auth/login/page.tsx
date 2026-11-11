@@ -8,7 +8,7 @@ import { UserRole } from "@/types";
 import { Card, CardContent, CardFooter } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { ShieldCheck, User, Building, ArrowRight } from "lucide-react";
+import { ShieldCheck, User, Building, ArrowRight, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,31 +34,48 @@ export default function LoginPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
     setIsSubmitting(true);
-    login(email.trim(), selectedRole);
+    setErrors({});
 
-    if (selectedRole === "FREELANCER") {
-      router.push("/freelancer/dashboard");
-    } else {
-      router.push("/client/dashboard");
+    try {
+      const user = await login(email.trim(), password);
+      if (user.role === "FREELANCER") {
+        router.push("/freelancer/dashboard");
+      } else {
+        router.push("/client/dashboard");
+      }
+    } catch (err: any) {
+      setErrors({ form: err.message || "Invalid email or password." });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleQuickDemoLogin = (role: UserRole) => {
-    const demoEmail = role === "FREELANCER" ? "vachan@talent.trustpay.ai" : "contracts@acmeventures.com";
+  const handleQuickDemoLogin = async (role: UserRole) => {
+    const demoEmail =
+      role === "FREELANCER" ? "vachan@talent.trustpay.ai" : "contracts@acmeventures.com";
+    const demoPass = "DemoPass123!";
     setEmail(demoEmail);
-    setPassword("demo-password-123");
+    setPassword(demoPass);
     setSelectedRole(role);
-    login(demoEmail, role);
+    setIsSubmitting(true);
+    setErrors({});
 
-    if (role === "FREELANCER") {
-      router.push("/freelancer/dashboard");
-    } else {
-      router.push("/client/dashboard");
+    try {
+      const user = await login(demoEmail, demoPass);
+      if (user.role === "FREELANCER") {
+        router.push("/freelancer/dashboard");
+      } else {
+        router.push("/client/dashboard");
+      }
+    } catch (err: any) {
+      setErrors({ form: err.message || "Failed to log in with demo account." });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -82,6 +99,13 @@ export default function LoginPage() {
         <Card className="border-gray-200/80 rounded-3xl shadow-xl overflow-hidden bg-white">
           <form onSubmit={handleLogin}>
             <CardContent className="space-y-5 pt-8">
+              {errors.form && (
+                <div className="flex items-center gap-2 p-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{errors.form}</span>
+                </div>
+              )}
+
               {/* Role Toggle for Login Target */}
               <div className="space-y-1.5 text-left">
                 <label className="block text-xs font-bold text-gray-700">Account Type</label>
@@ -154,6 +178,7 @@ export default function LoginPage() {
                     variant="outline"
                     size="sm"
                     className="text-xs"
+                    disabled={isSubmitting}
                     onClick={() => handleQuickDemoLogin("FREELANCER")}
                   >
                     Demo Freelancer
@@ -163,6 +188,7 @@ export default function LoginPage() {
                     variant="outline"
                     size="sm"
                     className="text-xs"
+                    disabled={isSubmitting}
                     onClick={() => handleQuickDemoLogin("CLIENT")}
                   >
                     Demo Client

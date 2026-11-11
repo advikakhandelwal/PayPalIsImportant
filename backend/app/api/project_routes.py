@@ -6,7 +6,7 @@ Implements:
 - POST /api/projects  (Client posts a new project with proposed milestone blueprints)
 """
 
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -22,6 +22,7 @@ from app.schemas.marketplace_schemas import (
     MilestoneBlueprintResponse,
 )
 from app.utils.id_converter import resolve_entity_id
+from app.utils.auth import require_client
 
 router = APIRouter(prefix="/api/projects", tags=["Marketplace Projects"])
 
@@ -85,24 +86,33 @@ def get_projects(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-def create_project(payload: ProjectCreateRequest, db: Session = Depends(get_db)):
+def create_project(
+    payload: ProjectCreateRequest,
+    current_user: User = Depends(require_client),
+    db: Session = Depends(get_db),
+):
     """
     Post a new project listing with proposed milestone blueprints.
-    Validates client role, non-negative budget, and milestone percentage totals.
+    Requires an authenticated CLIENT. Project ownership is always derived from current_user.id.
+    Rejects mismatched client IDs supplied in the request body (SEC-02 IDOR prevention).
     """
-    # 1. Resolve and validate client ownership
-    client_db_id = resolve_entity_id(payload.client_id, "users")
-    client_user = db.query(User).filter(User.id == client_db_id).first()
-    if not client_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Client user with ID '{payload.client_id}' not found."
-        )
-    if client_user.role != UserRole.CLIENT:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User '{client_user.name}' has role '{client_user.role}'. Only CLIENTs can post projects."
-        )
+    # 1. Ownership & IDOR Validation
+    if payload.client_id:
+        try:
+            resolved_client_id = resolve_entity_id(payload.client_id, "users")
+        except HTTPException:
+            resolved_client_id = None
+
+        if resolved_client_id is not None and resolved_client_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Mismatched clientId: Request body specified client ID '{payload.client_id}', "
+                    f"but authenticated user is ID {current_user.id}. Project ownership must belong to authenticated client."
+                ),
+            )
+
+    client_user = current_user
 
     # 2. Financial validation
     if payload.total_budget <= 0:

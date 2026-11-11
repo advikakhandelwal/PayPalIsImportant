@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import get_db
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.project import Project, ProjectStatus
 from app.models.contract import Contract, EscrowStatus
 from app.models.milestone import Milestone, MilestoneStatus
@@ -243,6 +243,23 @@ def _execute_advisory_inspection(
         "evaluatedAt": datetime.utcnow().isoformat(),
         "isAdvisoryOnly": True,
     }
+
+
+@router.get("", response_model=List[ContractResponse])
+def get_user_contracts(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Fetch active escrow contracts for the authenticated user.
+    - If CLIENT: returns contracts where client_id == current_user.id.
+    - If FREELANCER (or INFLUENCER): returns contracts where talent_id == current_user.id.
+    """
+    if current_user.role == UserRole.CLIENT:
+        contracts = db.query(Contract).filter(Contract.client_id == current_user.id).order_by(Contract.created_at.desc()).all()
+    else:
+        contracts = db.query(Contract).filter(Contract.talent_id == current_user.id).order_by(Contract.created_at.desc()).all()
+    return [_format_contract_response(c) for c in contracts]
 
 
 @router.get("/{id}", response_model=ContractResponse)
