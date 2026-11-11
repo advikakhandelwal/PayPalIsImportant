@@ -58,6 +58,7 @@ from app.models.milestone import Milestone, MilestoneStatus
 from app.models.submission import Submission, SubmissionType, VerificationStatus
 from app.models.application import Application, ApplicationStatus
 from app.utils.seed_data import seed_demo_data
+from app.core.security import create_access_token
 
 client = TestClient(app)
 
@@ -151,7 +152,7 @@ def test_group_projects():
                 },
             ],
         }
-        res = client.post("/api/projects", json=payload)
+        res = client.post("/api/projects", json=payload, headers=DEV_CLIENT_IDENTITY)
         assert res.status_code == 201, f"Expected 201, got {res.status_code}: {res.text}"
         data = res.json()
         assert data["title"] == "Build AI Escrow Mobile App"
@@ -170,7 +171,7 @@ def test_group_projects():
                 {"stepNumber": 2, "title": "Part 2", "description": "D", "percentage": 40},  # Sums to 80%!
             ],
         }
-        res = client.post("/api/projects", json=payload)
+        res = client.post("/api/projects", json=payload, headers=DEV_CLIENT_IDENTITY)
         assert res.status_code == 400
         assert "100%" in res.json()["detail"]
 
@@ -182,14 +183,39 @@ def test_group_projects():
             "totalBudget": 1000.0,
             "milestones": [{"stepNumber": 1, "title": "P", "description": "D", "percentage": 100}],
         }
-        res = client.post("/api/projects", json=payload)
+        res = client.post("/api/projects", json=payload, headers=DEV_TALENT_IDENTITY)
         assert res.status_code == 403
         assert "CLIENT" in res.json()["detail"]
+
+    def test_create_project_unauthenticated_rejected():
+        payload = {
+            "title": "Unauthenticated Project",
+            "description": "Should fail",
+            "totalBudget": 1000.0,
+            "milestones": [{"stepNumber": 1, "title": "P", "description": "D", "percentage": 100}],
+        }
+        res = client.post("/api/projects", json=payload)
+        assert res.status_code == 401, f"Expected 401, got {res.status_code}"
+
+    def test_create_project_mismatched_client_id_rejected():
+        # Authenticated as Client 1 (Acme / client-fintech-corp), but body specifies User 3 (Alex)
+        payload = {
+            "clientId": "3",
+            "title": "IDOR Attack Project",
+            "description": "Should fail with 400 Mismatched clientId",
+            "totalBudget": 1000.0,
+            "milestones": [{"stepNumber": 1, "title": "P", "description": "D", "percentage": 100}],
+        }
+        res = client.post("/api/projects", json=payload, headers=DEV_CLIENT_IDENTITY)
+        assert res.status_code == 400, f"Expected 400, got {res.status_code}"
+        assert "Mismatched clientId" in res.json()["detail"]
 
     run_test("GET  /api/projects returns listings with blueprint milestones", test_get_projects_structure)
     run_test("POST /api/projects creates listing and returns 201 Created", test_create_project_success)
     run_test("POST /api/projects rejects milestone percentages not summing to 100%", test_create_project_invalid_percentage)
     run_test("POST /api/projects rejects non-CLIENT user from posting projects", test_create_project_forbidden_role)
+    run_test("POST /api/projects rejects unauthenticated project creation with 401", test_create_project_unauthenticated_rejected)
+    run_test("POST /api/projects rejects mismatched clientId with 400 (SEC-02 IDOR)", test_create_project_mismatched_client_id_rejected)
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +261,13 @@ def test_group_contracts():
         assert res.status_code == 200
         assert res.json()["id"] == "1"
 
+    def test_get_contract_via_genuine_jwt():
+        # Genuine cryptographically-signed JWT Bearer token -> 200 OK
+        token = create_access_token(subject="1", role="CLIENT", email="contracts@acmeventures.com")
+        res = client.get("/api/contracts/1", headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 200
+        assert res.json()["id"] == "1"
+
     def test_get_contract_not_found():
         res = client.get("/api/contracts/99999", headers=DEV_CLIENT_IDENTITY)
         assert res.status_code == 404
@@ -248,6 +281,7 @@ def test_group_contracts():
     run_test("GET  /api/contracts/{id} allows assigned client identity with 200 OK", test_get_contract_by_assigned_client)
     run_test("GET  /api/contracts/{id} allows assigned freelancer identity with 200 OK", test_get_contract_by_assigned_talent)
     run_test("GET  /api/contracts/{id} accepts identity via Authorization header during development", test_get_contract_via_alt_header_format)
+    run_test("GET  /api/contracts/{id} accepts genuine cryptographically signed JWT Bearer token", test_get_contract_via_genuine_jwt)
     run_test("GET  /api/contracts/99999 returns 404 Not Found for authorized caller", test_get_contract_not_found)
     run_test("GET  /api/contracts/unregistered-id returns 404 without crashing", test_get_contract_malformed_id)
 
@@ -529,7 +563,7 @@ def test_group_applications():
     print("\n── Group 5: Application Endpoints ──────────────────────────────────")
 
     def test_get_all_applications_inbox():
-        res = client.get("/api/projects/all/applications")
+        res = client.get("/api/projects/all/applications", headers=DEV_CLIENT_IDENTITY)
         assert res.status_code == 200, f"Expected 200, got {res.status_code}: {res.text}"
         data = res.json()
         assert isinstance(data, list)
@@ -549,7 +583,7 @@ def test_group_applications():
         assert "badges" in sc
 
     def test_get_project_applications_by_alias():
-        res = client.get("/api/projects/proj-101/applications")
+        res = client.get("/api/projects/proj-101/applications", headers=DEV_CLIENT_IDENTITY)
         assert res.status_code == 200
         data = res.json()
         assert len(data) >= 2
@@ -557,19 +591,41 @@ def test_group_applications():
             assert a["projectId"] == "1"
 
     def test_get_project_applications_by_numeric_id():
-        res = client.get("/api/projects/1/applications")
+        res = client.get("/api/projects/1/applications", headers=DEV_CLIENT_IDENTITY)
         assert res.status_code == 200
         data = res.json()
         assert len(data) >= 2
 
     def test_get_project_applications_not_found():
-        res = client.get("/api/projects/99999/applications")
+        res = client.get("/api/projects/99999/applications", headers=DEV_CLIENT_IDENTITY)
         assert res.status_code == 404
+
+    def test_get_applications_unauthenticated_rejected():
+        # SEC-04: Unauthenticated access to /applications must return 401
+        res = client.get("/api/projects/all/applications")
+        assert res.status_code == 401, f"Expected 401, got {res.status_code}"
+
+    def test_get_project_applications_cross_client_forbidden():
+        # SEC-04: User 3 (Alex) attempting to view Client 1's project applications -> 403 (or only own proposal if freelancer)
+        # Register a second client to test strict cross-client project application protection
+        uid = uuid.uuid4().hex[:8]
+        reg = client.post("/api/auth/register", json={
+            "name": f"Other Client {uid}",
+            "email": f"otherclient_{uid}@example.com",
+            "password": "Password123!",
+            "role": "CLIENT",
+        })
+        token = reg.json()["accessToken"]
+        res = client.get("/api/projects/1/applications", headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 403, f"Expected 403 Forbidden for cross-client access, got {res.status_code}"
+        assert "Access denied" in res.json()["detail"]
 
     run_test("GET  /api/projects/all/applications returns multi-project applicant inbox", test_get_all_applications_inbox)
     run_test("GET  /api/projects/proj-101/applications returns project applications", test_get_project_applications_by_alias)
     run_test("GET  /api/projects/1/applications returns project applications by numeric ID", test_get_project_applications_by_numeric_id)
     run_test("GET  /api/projects/99999/applications returns 404 for missing project", test_get_project_applications_not_found)
+    run_test("GET  /api/projects/all/applications rejects unauthenticated requests with 401 (SEC-04)", test_get_applications_unauthenticated_rejected)
+    run_test("GET  /api/projects/{id}/applications rejects cross-client access with 403 (SEC-04)", test_get_project_applications_cross_client_forbidden)
 
 
 # ---------------------------------------------------------------------------

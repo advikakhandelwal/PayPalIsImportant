@@ -106,18 +106,46 @@ def _format_application_response(app: Application) -> ApplicationResponse:
 
 
 @router.get("/{projectId}/applications", response_model=List[ApplicationResponse])
-def get_project_applications(projectId: str, db: Session = Depends(get_db)):
+def get_project_applications(
+    projectId: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Fetch applications for a project (Client Applicant Inbox).
-    Supports:
-    - Specific project query (e.g. 'proj-101' or '1')
-    - 'all' query: Returns all applications across listings (for Client Overview Proposals tab)
+    Security & Privacy (SEC-04):
+    - Strictly requires authentication (401 for unauthenticated).
+    - Clients see applications ONLY for projects they own. Cross-client access is rejected with 403.
+    - Freelancers see ONLY their own submitted applications (never competing applicants).
+    - Unauthorized roles receive 403 Forbidden.
     """
     cleaned = projectId.strip().lower()
 
     if cleaned == "all":
-        applications = db.query(Application).order_by(Application.created_at.desc()).all()
-        return [_format_application_response(a) for a in applications]
+        if current_user.role == UserRole.CLIENT:
+            # Client sees applications for projects they own
+            client_project_ids = [p.id for p in db.query(Project.id).filter(Project.client_id == current_user.id).all()]
+            applications = (
+                db.query(Application)
+                .filter(Application.project_id.in_(client_project_ids))
+                .order_by(Application.created_at.desc())
+                .all()
+            )
+            return [_format_application_response(a) for a in applications]
+        elif current_user.role in (UserRole.FREELANCER, UserRole.INFLUENCER):
+            # Freelancer sees only their own applications across all projects
+            applications = (
+                db.query(Application)
+                .filter(Application.freelancer_id == current_user.id)
+                .order_by(Application.created_at.desc())
+                .all()
+            )
+            return [_format_application_response(a) for a in applications]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Unauthorized role for application inbox.",
+            )
 
     project_db_id = resolve_entity_id(projectId, "projects")
     project = db.query(Project).filter(Project.id == project_db_id).first()
@@ -127,11 +155,38 @@ def get_project_applications(projectId: str, db: Session = Depends(get_db)):
             detail=f"Project with ID '{projectId}' not found."
         )
 
-    applications = db.query(Application).filter(
-        Application.project_id == project.id
-    ).order_by(Application.created_at.desc()).all()
+    # Role privacy check
+    if current_user.role == UserRole.CLIENT:
+        if project.client_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You can only view applications for projects you own."
+            )
+        applications = (
+            db.query(Application)
+            .filter(Application.project_id == project.id)
+            .order_by(Application.created_at.desc())
+            .all()
+        )
+        return [_format_application_response(a) for a in applications]
 
-    return [_format_application_response(a) for a in applications]
+    elif current_user.role in (UserRole.FREELANCER, UserRole.INFLUENCER):
+        # Freelancers can only inspect their own application on a project
+        applications = (
+            db.query(Application)
+            .filter(
+                Application.project_id == project.id,
+                Application.freelancer_id == current_user.id,
+            )
+            .order_by(Application.created_at.desc())
+            .all()
+        )
+        return [_format_application_response(a) for a in applications]
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized role for project applications.",
+        )
 
 
 @router.post(

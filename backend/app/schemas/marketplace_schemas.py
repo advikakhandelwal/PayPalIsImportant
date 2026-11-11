@@ -125,7 +125,7 @@ class ContractMilestoneResponse(BaseMarketplaceSchema):
 # ---------------------------------------------------------------------------
 class ProjectCreateRequest(BaseModel):
     """Client POST payload when publishing a project."""
-    client_id: str = Field(..., alias="clientId")
+    client_id: Optional[str] = Field(None, alias="clientId")
     client_name: Optional[str] = Field(None, alias="clientName")
     client_company: Optional[str] = Field(None, alias="clientCompany")
     title: str
