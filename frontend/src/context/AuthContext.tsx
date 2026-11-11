@@ -1,38 +1,82 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { UserProfile, UserRole } from "@/types";
-import { SAMPLE_FREELANCER, SAMPLE_CLIENT } from "@/lib/mockData";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { UserProfile, UserRole, TrustScorecardData } from "@/types";
+import {
+  apiClient,
+  getStoredToken,
+  clearStoredToken,
+} from "@/services/api";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// localStorage helpers (SSR-safe)
-// ─────────────────────────────────────────────────────────────────────────────
-const LS_USER = "tp_demo_user";
-const LS_ROLE = "tp_demo_role";
-const LS_AUTH = "tp_demo_auth";
+const EMPTY_SCORECARD: TrustScorecardData = {
+  rating: 0,
+  onTimeDeliveryRate: 100,
+  complianceScore: 100,
+  completedProjects: 0,
+  totalEarningsOrSpent: 0,
+  currency: "USD",
+  badges: [],
+};
 
-function readLS<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
+export const EMPTY_USER: UserProfile = {
+  id: "",
+  name: "",
+  email: "",
+  role: "FREELANCER",
+  domain: "General",
+  bio: "",
+  portfolioLinks: [],
+  createdAt: new Date().toISOString(),
+  trustScorecard: EMPTY_SCORECARD,
+};
 
-function writeLS<T>(key: string, value: T): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // quota exceeded – silently ignore in demo mode
-  }
-}
+function normalizeUserProfile(raw: any): UserProfile {
+  if (!raw) return EMPTY_USER;
 
-function removeLS(key: string): void {
-  if (typeof window === "undefined") return;
-  try { window.localStorage.removeItem(key); } catch { /* ignore */ }
+  const rawScorecard = raw.trustScorecard || raw.trust_scorecard;
+  const scorecard: TrustScorecardData = {
+    rating: typeof rawScorecard?.rating === "number" ? rawScorecard.rating : (raw.rating || 0),
+    onTimeDeliveryRate:
+      typeof rawScorecard?.onTimeDeliveryRate === "number"
+        ? rawScorecard.onTimeDeliveryRate
+        : typeof rawScorecard?.on_time_delivery_rate === "number"
+        ? rawScorecard.on_time_delivery_rate
+        : (raw.on_time_rate ?? 100),
+    complianceScore:
+      typeof rawScorecard?.complianceScore === "number"
+        ? rawScorecard.complianceScore
+        : typeof rawScorecard?.compliance_score === "number"
+        ? rawScorecard.compliance_score
+        : (raw.compliance_score ?? 100),
+    completedProjects:
+      typeof rawScorecard?.completedProjects === "number"
+        ? rawScorecard.completedProjects
+        : typeof rawScorecard?.completed_projects === "number"
+        ? rawScorecard.completed_projects
+        : (raw.completed_projects ?? 0),
+    totalEarningsOrSpent:
+      typeof rawScorecard?.totalEarningsOrSpent === "number"
+        ? rawScorecard.totalEarningsOrSpent
+        : typeof rawScorecard?.total_earnings_or_spent === "number"
+        ? rawScorecard.total_earnings_or_spent
+        : (raw.total_earnings_or_spent ?? 0),
+    currency: rawScorecard?.currency || "USD",
+    badges: rawScorecard?.badges || raw.badges || [],
+  };
+
+  return {
+    id: String(raw.id || ""),
+    name: raw.name || "",
+    email: raw.email || "",
+    role: (raw.role === "CLIENT" ? "CLIENT" : "FREELANCER") as UserRole,
+    domain: raw.domain || "General",
+    bio: raw.bio || "",
+    companyName: raw.companyName || raw.company_name || "",
+    portfolioLinks: raw.portfolioLinks || raw.portfolio_links || [],
+    skills: raw.skills || [],
+    createdAt: raw.createdAt || raw.created_at || new Date().toISOString(),
+    trustScorecard: scorecard,
+  };
 }
 
 interface AuthContextType {
@@ -41,140 +85,155 @@ interface AuthContextType {
   setActiveRole: (role: UserRole) => void;
   toggleRole: () => void;
   isAuthenticated: boolean;
-  login: (email: string, role?: UserRole) => void;
-  signup: (name: string, email: string, role: UserRole) => void;
-  updateProfile: (profileData: Partial<UserProfile>) => void;
+  login: (email: string, password?: string, role?: UserRole) => Promise<UserProfile>;
+  signup: (name: string, email: string, password?: string, role?: UserRole) => Promise<UserProfile>;
+  updateProfile: (profileData: Partial<UserProfile>) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
   isHydrated: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Deterministic initial state identical on SSR and initial client render
+  const [currentUser, setCurrentUser] = useState<UserProfile>(EMPTY_USER);
   const [activeRole, setActiveRoleState] = useState<UserRole>("FREELANCER");
-  const [currentUser, setCurrentUser] = useState<UserProfile>(SAMPLE_FREELANCER);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isHydrated, setIsHydrated] = useState<boolean>(false);
 
-  // 1. Restore persisted state from localStorage only after client mounting
+  // 1. Restore authenticated session on mount using verified JWT
   useEffect(() => {
-    try {
-      const savedRole = readLS<UserRole | null>(LS_ROLE, null);
-      const savedUser = readLS<UserProfile | null>(LS_USER, null);
-      const savedAuth = readLS<boolean | null>(LS_AUTH, null);
+    let isMounted = true;
+    async function restoreSession() {
+      const token = getStoredToken();
+      if (!token) {
+        if (isMounted) {
+          setIsHydrated(true);
+        }
+        return;
+      }
 
-      if (savedRole === "CLIENT" || savedRole === "FREELANCER") {
-        setActiveRoleState(savedRole);
+      try {
+        const user = await apiClient.getMe();
+        if (isMounted && user && user.id) {
+          const normalized = normalizeUserProfile(user);
+          setCurrentUser(normalized);
+          setActiveRoleState(normalized.role);
+          setIsAuthenticated(true);
+        }
+      } catch (err) {
+        // Token expired or invalid: clear and reset
+        clearStoredToken();
+        if (isMounted) {
+          setCurrentUser(EMPTY_USER);
+          setIsAuthenticated(false);
+        }
+      } finally {
+        if (isMounted) {
+          setIsHydrated(true);
+        }
       }
-      if (savedUser && savedUser.id) {
-        setCurrentUser(savedUser);
-      } else if (savedRole === "CLIENT") {
-        setCurrentUser(SAMPLE_CLIENT);
-      }
-      if (savedAuth !== null) {
-        setIsAuthenticated(savedAuth);
-      }
-    } catch {
-      // Safe fallback in demo mode
-    } finally {
-      setIsHydrated(true);
     }
+
+    restoreSession();
+    return () => {
+      isMounted = false;
+    };
   }, []);
-
-  // 2. Persist auth state changes to localStorage only after hydration has completed
-  useEffect(() => {
-    if (!isHydrated) return;
-    writeLS(LS_USER, currentUser);
-  }, [currentUser, isHydrated]);
-
-  useEffect(() => {
-    if (!isHydrated) return;
-    writeLS(LS_ROLE, activeRole);
-  }, [activeRole, isHydrated]);
-
-  useEffect(() => {
-    if (!isHydrated) return;
-    writeLS(LS_AUTH, isAuthenticated);
-  }, [isAuthenticated, isHydrated]);
 
   const setActiveRole = (role: UserRole) => {
     setActiveRoleState(role);
-    // Switch preview user when toggling roles in demo mode
-    if (currentUser.id === SAMPLE_FREELANCER.id || currentUser.id === SAMPLE_CLIENT.id) {
-      setCurrentUser(role === "FREELANCER" ? SAMPLE_FREELANCER : SAMPLE_CLIENT);
-    }
   };
 
   const toggleRole = () => {
     const nextRole: UserRole = activeRole === "FREELANCER" ? "CLIENT" : "FREELANCER";
-    setActiveRole(nextRole);
+    setActiveRoleState(nextRole);
   };
 
-  /**
-   * Frontend Demo Signup
-   * NOTE: Passwords are intentionally NOT received, handled, or stored here.
-   * New members begin in an UNRATED / PENDING state with 0 scores and 0 completed projects.
-   */
-  const signup = (name: string, email: string, role: UserRole) => {
-    const newUser: UserProfile = {
-      id: `user-${Date.now()}`,
-      name,
-      email,
-      role,
-      domain: role === "FREELANCER" ? "General Talent" : "General Enterprise",
-      bio: "",
-      portfolioLinks: [],
-      createdAt: new Date().toISOString(),
-      isNewMember: true,
-      trustScorecard: {
-        rating: 0, // Unrated initially
-        onTimeDeliveryRate: 0,
-        complianceScore: 0,
-        completedProjects: 0,
-        totalEarningsOrSpent: 0,
-        currency: "USD",
-        badges: [], // No badges until real milestone delivery
-      },
-    };
-
-    setCurrentUser(newUser);
-    setActiveRoleState(role);
-    setIsAuthenticated(true);
-  };
-
-  /**
-   * Frontend Demo Login
-   */
-  const login = (email: string, role?: UserRole) => {
-    const targetRole = role || activeRole;
-    setActiveRoleState(targetRole);
-
-    // If logging in as pre-seeded demo users
-    if (targetRole === "FREELANCER") {
-      setCurrentUser({ ...SAMPLE_FREELANCER, email: email || SAMPLE_FREELANCER.email });
-    } else {
-      setCurrentUser({ ...SAMPLE_CLIENT, email: email || SAMPLE_CLIENT.email });
+  const refreshUser = useCallback(async () => {
+    try {
+      const user = await apiClient.getMe();
+      if (user && user.id) {
+        const normalized = normalizeUserProfile(user);
+        setCurrentUser(normalized);
+        setActiveRoleState(normalized.role);
+        setIsAuthenticated(true);
+      }
+    } catch {
+      // ignore
     }
+  }, []);
+
+  /**
+   * Real Authentication Login
+   * Cryptographically verifies credentials against the backend API and stores JWT.
+   */
+  const login = async (email: string, password = "", _role?: UserRole): Promise<UserProfile> => {
+    const authData = await apiClient.login({
+      email: email.trim(),
+      password,
+    });
+
+    const normalized = normalizeUserProfile(authData.user);
+    setCurrentUser(normalized);
+    setActiveRoleState(normalized.role);
     setIsAuthenticated(true);
+    return normalized;
   };
 
   /**
-   * Update current user profile (used by Onboarding flow)
+   * Real Registration
+   * Cryptographically registers a new user in the backend database and stores JWT.
    */
-  const updateProfile = (profileData: Partial<UserProfile>) => {
-    setCurrentUser((prev) => ({
-      ...prev,
-      ...profileData,
-    }));
+  const signup = async (
+    name: string,
+    email: string,
+    password = "",
+    role: UserRole = "FREELANCER"
+  ): Promise<UserProfile> => {
+    const authData = await apiClient.register({
+      name: name.trim(),
+      email: email.trim(),
+      password,
+      role,
+      domain: role === "FREELANCER" ? "Full-Stack Development" : "Enterprise",
+    });
+
+    const normalized = normalizeUserProfile(authData.user);
+    setCurrentUser(normalized);
+    setActiveRoleState(normalized.role);
+    setIsAuthenticated(true);
+    return normalized;
   };
 
+  /**
+   * Update Profile Details via backend API
+   */
+  const updateProfile = async (profileData: Partial<UserProfile>): Promise<void> => {
+    try {
+      const updated = await apiClient.updateProfile(profileData);
+      const normalized = normalizeUserProfile(updated);
+      setCurrentUser(normalized);
+    } catch {
+      // Optimistic local update as fallback
+      setCurrentUser((prev) => ({
+        ...prev,
+        ...profileData,
+      }));
+    }
+  };
+
+  /**
+   * Secure Logout
+   * Clears stored JWT token and resets state.
+   */
   const logout = () => {
+    clearStoredToken();
+    setCurrentUser(EMPTY_USER);
     setIsAuthenticated(false);
-    // Clear persisted demo session so the next visit starts fresh
-    removeLS(LS_USER);
-    removeLS(LS_ROLE);
-    removeLS(LS_AUTH);
+    if (typeof window !== "undefined") {
+      window.location.href = "/auth/login";
+    }
   };
 
   return (
@@ -189,6 +248,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signup,
         updateProfile,
         logout,
+        refreshUser,
         isHydrated,
       }}
     >

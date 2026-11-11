@@ -12,6 +12,7 @@ Security Standards:
 """
 
 import logging
+from typing import Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -21,18 +22,47 @@ from app.models.user import User, UserRole
 from app.schemas.auth_schemas import (
     UserRegisterRequest,
     UserLoginRequest,
+    UserProfileUpdateRequest,
     UserAuthResponse,
     TokenResponse,
 )
+from app.schemas.marketplace_schemas import TrustScorecardData
 from app.core.security import hash_password, verify_password, create_access_token
 from app.utils.auth import get_current_user
+from app.services.reputation_service import calculate_user_reputation
 
 logger = logging.getLogger("trustpay.auth_routes")
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
-def _format_user_auth_response(user: User) -> UserAuthResponse:
-    """Format SQLAlchemy User model into UserAuthResponse."""
+def _format_user_auth_response(user: User, db: Optional[Session] = None) -> UserAuthResponse:
+    """Format SQLAlchemy User model into UserAuthResponse including reputation scorecard."""
+    scorecard = None
+    if db:
+        rep = calculate_user_reputation(user, db)
+        scorecard = TrustScorecardData(
+            rating=rep["rating"],
+            on_time_delivery_rate=rep["on_time_delivery_rate"],
+            compliance_score=rep["compliance_score"],
+            completed_projects=rep["completed_projects"],
+            total_earnings_or_spent=rep["total_earnings_or_spent"],
+            currency=rep.get("currency", "USD"),
+            badges=rep["badges"],
+            is_unrated=rep["is_unrated"],
+        )
+    elif user.trust_score is not None:
+        has_ratings = bool(user.rating is not None and user.rating > 0.0)
+        scorecard = TrustScorecardData(
+            rating=float(user.rating) if has_ratings else None,
+            on_time_delivery_rate=int(user.on_time_rate) if user.on_time_rate is not None else None,
+            compliance_score=int(user.compliance_score) if user.compliance_score is not None else 100,
+            completed_projects=int(user.completed_projects) if user.completed_projects is not None else 0,
+            total_earnings_or_spent=float(user.total_earnings_or_spent) if user.total_earnings_or_spent is not None else 0.0,
+            currency="USD",
+            badges=user.badges if user.badges else [],
+            is_unrated=not has_ratings,
+        )
+
     return UserAuthResponse(
         id=str(user.id),
         name=user.name,
@@ -42,6 +72,7 @@ def _format_user_auth_response(user: User) -> UserAuthResponse:
         bio=user.bio,
         company_name=user.company_name,
         created_at=user.created_at.isoformat() if user.created_at else datetime.utcnow().isoformat(),
+        trust_scorecard=scorecard,
     )
 
 
@@ -99,7 +130,7 @@ def register_user(payload: UserRegisterRequest, db: Session = Depends(get_db)):
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        user=_format_user_auth_response(new_user),
+        user=_format_user_auth_response(new_user, db),
     )
 
 
@@ -141,7 +172,7 @@ def login_user(payload: UserLoginRequest, db: Session = Depends(get_db)):
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        user=_format_user_auth_response(user),
+        user=_format_user_auth_response(user, db),
     )
 
 
@@ -150,8 +181,38 @@ def login_user(payload: UserLoginRequest, db: Session = Depends(get_db)):
     response_model=UserAuthResponse,
     status_code=status.HTTP_200_OK,
 )
-def get_current_user_profile(current_user: User = Depends(get_current_user)):
+def get_current_user_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Retrieve authenticated user profile from verified JWT token.
     """
-    return _format_user_auth_response(current_user)
+    return _format_user_auth_response(current_user, db)
+
+
+@router.patch(
+    "/profile",
+    response_model=UserAuthResponse,
+    status_code=status.HTTP_200_OK,
+)
+def update_profile(
+    payload: UserProfileUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Update authenticated user's profile details.
+    """
+    if payload.name is not None and payload.name.strip():
+        current_user.name = payload.name.strip()
+    if payload.domain is not None:
+        current_user.domain = payload.domain.strip()
+    if payload.bio is not None:
+        current_user.bio = payload.bio.strip()
+    if payload.company_name is not None:
+        current_user.company_name = payload.company_name.strip()
+
+    db.commit()
+    db.refresh(current_user)
+    return _format_user_auth_response(current_user, db)

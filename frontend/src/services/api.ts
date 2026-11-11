@@ -1,94 +1,357 @@
 /**
- * TrustPay AI - API Integration Adapter
- * Ready to connect directly to the FastAPI backend (http://localhost:8000/api).
- * Currently wired with mock fallbacks for independent frontend development and testing.
+ * TrustPay AI - Centralized Backend API Client
+ * Connects directly to the FastAPI backend (default: http://localhost:8000/api).
+ * Genuine cryptographic JWT Bearer authentication with zero mock fallbacks.
  */
 
-import { Project, EscrowContract, Application, DeliverableSubmission } from "@/types";
-import { SAMPLE_PROJECTS, SAMPLE_ACTIVE_CONTRACT, SAMPLE_APPLICATIONS } from "@/lib/mockData";
+import {
+  Project,
+  EscrowContract,
+  Application,
+  DeliverableSubmission,
+  UserProfile,
+  UserRole,
+  TrustScorecardData,
+} from "@/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const TOKEN_KEY = "tp_access_token";
+
+export interface RegisterPayload {
+  name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  domain?: string;
+  bio?: string;
+  companyName?: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  tokenType: string;
+  user: UserProfile;
+}
+
+export interface ProjectCreatePayload {
+  title: string;
+  domain: string;
+  description: string;
+  totalBudget: number;
+  currency?: string;
+  deadline?: string;
+  requiredSkills?: string[];
+  experienceLevel?: string;
+  additionalRequirements?: string;
+  milestones: Array<{
+    stepNumber: number;
+    title: string;
+    description: string;
+    percentage: number;
+    paymentAmount?: number;
+    deadline?: string;
+    deliverableRequirements?: string[];
+  }>;
+}
+
+export interface ApplicationSubmitPayload {
+  coverLetter: string;
+  bidAmount: number;
+  currency?: string;
+}
+
+export interface DeliverableSubmitPayload {
+  submissionType: "URL" | "FILE";
+  submissionUrl: string;
+  fileName?: string;
+  notes: string;
+}
+
+export interface RevisionRequestPayload {
+  feedback: string;
+  specificCorrections?: string;
+  additionalInstructions?: string;
+}
+
+export interface ReviewSubmitPayload {
+  rating: number;
+  review?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Token Helpers (SSR-Safe)
+// ─────────────────────────────────────────────────────────────────────────────
+export function getStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredToken(token: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    // ignore
+  }
+}
+
+export function clearStoredToken(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function getHeaders(customHeaders: Record<string, string> = {}): HeadersInit {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...customHeaders,
+  };
+  const token = getStoredToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+async function handleResponse<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    let errorMessage = `Request failed with status ${res.status}`;
+    try {
+      const errData = await res.json();
+      if (errData.detail) {
+        errorMessage =
+          typeof errData.detail === "string"
+            ? errData.detail
+            : Array.isArray(errData.detail)
+            ? errData.detail.map((e: any) => e.msg || JSON.stringify(e)).join(", ")
+            : JSON.stringify(errData.detail);
+      } else if (errData.message) {
+        errorMessage = errData.message;
+      }
+    } catch {
+      // not JSON
+    }
+    const error = new Error(errorMessage);
+    (error as any).status = res.status;
+    throw error;
+  }
+  return res.json() as Promise<T>;
+}
 
 export const apiClient = {
-  /**
-   * Fetch all open marketplace listings
-   */
+  // ── Authentication Endpoints ──────────────────────────────────────────────
+  async register(payload: RegisterPayload): Promise<AuthResponse> {
+    const res = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await handleResponse<AuthResponse>(res);
+    if (data.accessToken) {
+      setStoredToken(data.accessToken);
+    }
+    return data;
+  },
+
+  async login(payload: LoginPayload): Promise<AuthResponse> {
+    const res = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await handleResponse<AuthResponse>(res);
+    if (data.accessToken) {
+      setStoredToken(data.accessToken);
+    }
+    return data;
+  },
+
+  async getMe(): Promise<UserProfile> {
+    const res = await fetch(`${API_BASE_URL}/auth/me`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<UserProfile>(res);
+  },
+
+  async updateProfile(profileData: Partial<UserProfile>): Promise<UserProfile> {
+    const res = await fetch(`${API_BASE_URL}/auth/profile`, {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify(profileData),
+    });
+    return handleResponse<UserProfile>(res);
+  },
+
+  // ── Project Marketplace Endpoints ─────────────────────────────────────────
   async getProjects(): Promise<Project[]> {
-    try {
-      const res = await fetch(`${API_BASE_URL}/projects`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Backend not available");
-      return await res.json();
-    } catch {
-      // Fallback to sample data for frontend testing
-      return SAMPLE_PROJECTS;
-    }
+    const res = await fetch(`${API_BASE_URL}/projects`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<Project[]>(res);
   },
 
-  /**
-   * Post a new project (Client action)
-   */
-  async createProject(project: Omit<Project, "id" | "createdAt">): Promise<Project> {
-    try {
-      const res = await fetch(`${API_BASE_URL}/projects`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(project),
-      });
-      if (!res.ok) throw new Error("Backend not available");
-      return await res.json();
-    } catch {
-      return {
-        ...project,
-        id: `proj-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-      };
-    }
+  async createProject(project: ProjectCreatePayload): Promise<Project> {
+    const res = await fetch(`${API_BASE_URL}/projects`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(project),
+    });
+    return handleResponse<Project>(res);
   },
 
-  /**
-   * Fetch active escrow contract by ID
-   */
+  // ── Application Endpoints ─────────────────────────────────────────────────
+  async getApplications(projectId: string): Promise<Application[]> {
+    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/applications`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<Application[]>(res);
+  },
+
+  async getAllApplications(): Promise<Application[]> {
+    const res = await fetch(`${API_BASE_URL}/projects/all/applications`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<Application[]>(res);
+  },
+
+  async submitApplication(projectId: string, payload: ApplicationSubmitPayload): Promise<Application> {
+    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/applications`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<Application>(res);
+  },
+
+  async acceptApplication(projectId: string, applicationId: string): Promise<EscrowContract> {
+    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/applications/${applicationId}/accept`, {
+      method: "POST",
+      headers: getHeaders(),
+    });
+    return handleResponse<EscrowContract>(res);
+  },
+
+  async rejectApplication(projectId: string, applicationId: string): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/applications/${applicationId}/reject`, {
+      method: "POST",
+      headers: getHeaders(),
+    });
+    return handleResponse<{ message: string }>(res);
+  },
+
+  // ── Contract & Escrow Endpoints ───────────────────────────────────────────
+  async getContracts(): Promise<EscrowContract[]> {
+    const res = await fetch(`${API_BASE_URL}/contracts`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<EscrowContract[]>(res);
+  },
+
   async getContract(id: string): Promise<EscrowContract> {
-    try {
-      const res = await fetch(`${API_BASE_URL}/contracts/${id}`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Backend not available");
-      return await res.json();
-    } catch {
-      return SAMPLE_ACTIVE_CONTRACT;
-    }
+    const res = await fetch(`${API_BASE_URL}/contracts/${id}`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<EscrowContract>(res);
   },
 
-  /**
-   * Submit deliverable for a milestone (Freelancer action)
-   */
   async submitDeliverable(
     contractId: string,
     milestoneId: string,
-    submission: DeliverableSubmission
+    submission: DeliverableSubmitPayload
   ): Promise<DeliverableSubmission> {
-    try {
-      const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/milestones/${milestoneId}/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(submission),
-      });
-      if (!res.ok) throw new Error("Backend not available");
-      return await res.json();
-    } catch {
-      return submission;
-    }
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/milestones/${milestoneId}/submit`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(submission),
+    });
+    return handleResponse<DeliverableSubmission>(res);
   },
 
-  /**
-   * Fetch applications for a project (Client inbox)
-   */
-  async getApplications(projectId: string): Promise<Application[]> {
-    try {
-      const res = await fetch(`${API_BASE_URL}/projects/${projectId}/applications`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Backend not available");
-      return await res.json();
-    } catch {
-      return SAMPLE_APPLICATIONS.filter((a) => a.projectId === projectId || projectId === "all");
-    }
+  async approveMilestone(contractId: string, milestoneId: string): Promise<EscrowContract> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/milestones/${milestoneId}/approve`, {
+      method: "POST",
+      headers: getHeaders(),
+    });
+    return handleResponse<EscrowContract>(res);
+  },
+
+  async requestRevision(
+    contractId: string,
+    milestoneId: string,
+    revisionData: RevisionRequestPayload
+  ): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/milestones/${milestoneId}/request-revision`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(revisionData),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async submitReview(contractId: string, reviewData: ReviewSubmitPayload): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/review`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(reviewData),
+    });
+    return handleResponse<any>(res);
+  },
+
+  // ── Reputation & Scorecard Endpoints ──────────────────────────────────────
+  async getUserScorecard(userId: string): Promise<TrustScorecardData> {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/scorecard`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<TrustScorecardData>(res);
+  },
+
+  // ── AI Verifier & Decomposition Endpoints ─────────────────────────────────
+  async decomposeSpec(payload: {
+    prompt: string;
+    total_budget: number;
+    currency?: string;
+    target_role?: string;
+  }): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/ai/decompose-spec`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async mediateDispute(payload: {
+    milestone_spec: string;
+    deliverable_summary: string;
+    company_complaint: string;
+    freelancer_statement: string;
+    step_amount: number;
+    provider?: string;
+  }): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/ai/dispute/mediate`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
   },
 };

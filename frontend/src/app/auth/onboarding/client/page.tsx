@@ -31,19 +31,23 @@ export default function ClientOnboardingPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
     setIsSubmitting(true);
 
-    updateProfile({
-      name: contactName.trim(),
-      companyName: companyName.trim(),
-      email: email.trim(),
-      domain: industry.trim(),
-      companyDescription: companyDescription.trim(),
-    });
+    try {
+      await updateProfile({
+        name: contactName.trim(),
+        companyName: companyName.trim(),
+        email: email.trim(),
+        domain: industry.trim(),
+        companyDescription: companyDescription.trim(),
+      });
+    } catch {
+      // ignore
+    }
 
     // Redirect to Client Dashboard as required
     router.push("/client/dashboard");

@@ -5,12 +5,13 @@ Request and response schemas for user registration, login, and authentication to
 Enforces the 72-byte bcrypt limit and two platform roles: CLIENT and FREELANCER.
 """
 
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 import re
 
 from app.models.user import UserRole
+from app.schemas.marketplace_schemas import TrustScorecardData
 
 
 class BaseAuthSchema(BaseModel):
@@ -95,6 +96,16 @@ class UserLoginRequest(BaseModel):
         return v
 
 
+class UserProfileUpdateRequest(BaseModel):
+    """Payload for updating user profile."""
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    domain: Optional[str] = Field(None, max_length=120)
+    bio: Optional[str] = Field(None)
+    company_name: Optional[str] = Field(None, alias="companyName", max_length=120)
+
+
 class UserAuthResponse(BaseAuthSchema):
     """Public user profile returned upon authentication."""
     id: str
@@ -105,6 +116,7 @@ class UserAuthResponse(BaseAuthSchema):
     bio: Optional[str] = None
     company_name: Optional[str] = Field(None, serialization_alias="companyName")
     created_at: Optional[str] = Field(None, serialization_alias="createdAt")
+    trust_scorecard: Optional[TrustScorecardData] = Field(None, serialization_alias="trustScorecard")
 
 
 class TokenResponse(BaseAuthSchema):

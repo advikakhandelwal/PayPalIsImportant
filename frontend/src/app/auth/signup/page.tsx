@@ -8,7 +8,7 @@ import { UserRole } from "@/types";
 import { Card, CardContent, CardFooter } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { ShieldCheck, User, Building, CheckCircle2, ArrowRight } from "lucide-react";
+import { ShieldCheck, User, Building, CheckCircle2, ArrowRight, AlertCircle } from "lucide-react";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -32,8 +32,8 @@ export default function SignupPage() {
     }
     if (!password) {
       errs.password = "Password is required";
-    } else if (password.length < 6) {
-      errs.password = "Password must be at least 6 characters";
+    } else if (password.length < 8) {
+      errs.password = "Password must be at least 8 characters";
     }
     if (password !== confirmPassword) {
       errs.confirmPassword = "Passwords do not match";
@@ -42,17 +42,25 @@ export default function SignupPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
     setIsSubmitting(true);
-    signup(fullName.trim(), email.trim(), selectedRole);
+    setErrors({});
 
-    if (selectedRole === "FREELANCER") {
-      router.push("/auth/onboarding/freelancer");
-    } else {
-      router.push("/auth/onboarding/client");
+    try {
+      await signup(fullName.trim(), email.trim(), password, selectedRole);
+
+      if (selectedRole === "FREELANCER") {
+        router.push("/auth/onboarding/freelancer");
+      } else {
+        router.push("/auth/onboarding/client");
+      }
+    } catch (err: any) {
+      setErrors({ form: err.message || "Registration failed. Please check your information." });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -76,6 +84,13 @@ export default function SignupPage() {
         <Card className="border-gray-200/80 rounded-3xl shadow-xl overflow-hidden bg-white">
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-5 pt-8">
+              {errors.form && (
+                <div className="flex items-center gap-2 p-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{errors.form}</span>
+                </div>
+              )}
+
               {/* Role Selection */}
               <div className="space-y-2 text-left">
                 <label className="block text-xs font-bold text-gray-700">
@@ -92,14 +107,24 @@ export default function SignupPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3">
-                      <div className={`p-2 rounded-xl ${selectedRole === "FREELANCER" ? "bg-[#0070E0] text-white" : "bg-gray-100 text-gray-600"}`}>
+                      <div
+                        className={`p-2 rounded-xl ${
+                          selectedRole === "FREELANCER"
+                            ? "bg-[#0070E0] text-white"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
                         <User className="w-4 h-4" />
                       </div>
-                      {selectedRole === "FREELANCER" && <CheckCircle2 className="w-4 h-4 text-[#0070E0]" />}
+                      {selectedRole === "FREELANCER" && (
+                        <CheckCircle2 className="w-4 h-4 text-[#0070E0]" />
+                      )}
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-gray-900">Freelancer</h4>
-                      <p className="text-[11px] text-gray-500 mt-0.5 leading-tight">Find projects and earn.</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5 leading-tight">
+                        Find projects and earn.
+                      </p>
                     </div>
                   </div>
 
@@ -113,14 +138,24 @@ export default function SignupPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3">
-                      <div className={`p-2 rounded-xl ${selectedRole === "CLIENT" ? "bg-[#003087] text-white" : "bg-gray-100 text-gray-600"}`}>
+                      <div
+                        className={`p-2 rounded-xl ${
+                          selectedRole === "CLIENT"
+                            ? "bg-[#003087] text-white"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
                         <Building className="w-4 h-4" />
                       </div>
-                      {selectedRole === "CLIENT" && <CheckCircle2 className="w-4 h-4 text-[#003087]" />}
+                      {selectedRole === "CLIENT" && (
+                        <CheckCircle2 className="w-4 h-4 text-[#003087]" />
+                      )}
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-gray-900">Client</h4>
-                      <p className="text-[11px] text-gray-500 mt-0.5 leading-tight">Post projects and hire talent.</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5 leading-tight">
+                        Post projects and hire talent.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -150,7 +185,7 @@ export default function SignupPage() {
                 label="Password"
                 type="password"
                 required
-                placeholder="At least 6 characters"
+                placeholder="At least 8 characters"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 error={errors.password}
