@@ -41,6 +41,8 @@ from app.schemas.marketplace_schemas import (
     DeliverableSubmissionResponse,
     RevisionRequestCreate,
     RevisionRequestResponse,
+    ContractReviewRequest,
+    ContractReviewResponse,
 )
 from app.utils.id_converter import resolve_entity_id
 from app.utils.auth import get_current_user
@@ -133,6 +135,9 @@ def _format_contract_response(contract: Contract) -> ContractResponse:
         escrow_status=contract.escrow_status,
         created_at=contract.created_at.isoformat() if contract.created_at else datetime.utcnow().isoformat(),
         milestones=milestone_responses,
+        client_rating=contract.client_rating,
+        client_review=contract.client_review,
+        reviewed_at=contract.reviewed_at.isoformat() if getattr(contract, "reviewed_at", None) else None,
     )
 
 
@@ -666,6 +671,15 @@ def approve_milestone(
         db.commit()
         db.refresh(contract)
         db.refresh(milestone)
+
+        # Trigger Phase 6 pure reputation recalculation for both parties on completion
+        if all_released:
+            try:
+                from app.services.reputation_service import update_user_reputation_cache
+                update_user_reputation_cache(contract.talent_id, db)
+                update_user_reputation_cache(contract.client_id, db)
+            except Exception as rep_err:
+                logger.error(f"Failed to update reputation cache on contract completion: {rep_err}")
     except HTTPException:
         db.rollback()
         raise
@@ -825,3 +839,79 @@ def request_milestone_revision(
         )
 
     return _format_milestone_response(milestone)
+
+
+@router.post("/{contractId}/review", response_model=ContractReviewResponse)
+def submit_contract_review(
+    contractId: str,
+    payload: ContractReviewRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Client submits star rating and review feedback on a completed contract.
+    Phase 6 Implementation.
+
+    Guarantees:
+    1. Authorization: Only the assigned client can review the contract.
+    2. Lifecycle Check: Review can only be submitted once the contract is COMPLETED.
+    3. Duplicate Prevention: Only one review per completed contract is permitted.
+    4. Safe Recalculation: Idempotently updates the freelancer's overall rating without score inflation.
+    """
+    contract_db_id = resolve_entity_id(contractId, "contracts")
+    contract = db.query(Contract).filter(Contract.id == contract_db_id).first()
+    if not contract:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Contract '{contractId}' not found."
+        )
+
+    # 1. Authorization: Caller MUST be the assigned client
+    if current_user.id != contract.client_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Only the assigned client can submit a review for this contract."
+        )
+
+    # 2. Lifecycle Check: Contract must be COMPLETED
+    if contract.escrow_status != EscrowStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot review contract in '{contract.escrow_status.value}' status. Reviews are only permitted for COMPLETED contracts."
+        )
+
+    # 3. Duplicate Review Prevention
+    if contract.client_rating is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A client review has already been submitted for this contract."
+        )
+
+    now = datetime.utcnow()
+    contract.client_rating = round(float(payload.rating), 2)
+    contract.client_review = payload.review.strip() if payload.review else None
+    contract.reviewed_at = now
+
+    try:
+        db.commit()
+        db.refresh(contract)
+
+        # Recalculate freelancer's reputation cache
+        from app.services.reputation_service import update_user_reputation_cache
+        update_user_reputation_cache(contract.talent_id, db)
+    except SQLAlchemyError as db_err:
+        db.rollback()
+        logger.error(f"Failed to record contract review: {db_err}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to record review due to a database error."
+        )
+
+    return ContractReviewResponse(
+        contract_id=str(contract.id),
+        client_id=str(contract.client_id),
+        freelancer_id=str(contract.talent_id),
+        client_rating=contract.client_rating,
+        client_review=contract.client_review,
+        reviewed_at=now.isoformat(),
+    )

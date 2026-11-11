@@ -6,6 +6,7 @@ from app.api.ai_routes import router as ai_router
 from app.api.project_routes import router as project_router
 from app.api.contract_routes import router as contract_router
 from app.api.application_routes import router as application_router, apps_router as applications_direct_router
+from app.api.user_routes import router as user_router
 from app.database import engine, Base
 
 # Import all models so Base.metadata knows about every table before create_all() runs.
@@ -51,6 +52,7 @@ app.include_router(project_router)
 app.include_router(contract_router)
 app.include_router(application_router)
 app.include_router(applications_direct_router)
+app.include_router(user_router)
 
 
 @app.get("/")
