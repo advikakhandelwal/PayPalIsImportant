@@ -77,14 +77,16 @@ def _format_application_response(app: Application) -> ApplicationResponse:
     """Format a SQLAlchemy Application into an ApplicationResponse with nested trustScorecard."""
     freelancer = app.freelancer
 
+    has_ratings = bool(freelancer and freelancer.rating is not None and freelancer.rating > 0.0)
     scorecard = TrustScorecardData(
-        rating=float(freelancer.rating) if freelancer and freelancer.rating is not None else 5.0,
-        on_time_delivery_rate=int(freelancer.on_time_rate) if freelancer and freelancer.on_time_rate is not None else 100,
+        rating=float(freelancer.rating) if has_ratings else None,
+        on_time_delivery_rate=int(freelancer.on_time_rate) if freelancer and freelancer.on_time_rate is not None else None,
         compliance_score=int(freelancer.compliance_score) if freelancer and freelancer.compliance_score is not None else 100,
         completed_projects=int(freelancer.completed_projects) if freelancer and freelancer.completed_projects is not None else 0,
         total_earnings_or_spent=float(freelancer.total_earnings_or_spent) if freelancer and freelancer.total_earnings_or_spent is not None else 0.0,
         currency=app.currency or "USD",
         badges=freelancer.badges if freelancer and freelancer.badges else [],
+        is_unrated=not has_ratings,
     )
 
     return ApplicationResponse(

@@ -180,19 +180,41 @@ class ContractResponse(BaseMarketplaceSchema):
     escrow_status: EscrowStatus = Field(..., serialization_alias="escrowStatus")
     created_at: str = Field(..., serialization_alias="createdAt")
     milestones: List[ContractMilestoneResponse] = Field(default_factory=list)
+    client_rating: Optional[float] = Field(None, serialization_alias="clientRating")
+    client_review: Optional[str] = Field(None, serialization_alias="clientReview")
+    reviewed_at: Optional[str] = Field(None, serialization_alias="reviewedAt")
 
 
 # ---------------------------------------------------------------------------
 # 4. Application & Trust Scorecard Schemas
 # ---------------------------------------------------------------------------
 class TrustScorecardData(BaseMarketplaceSchema):
-    rating: float = 5.0
-    on_time_delivery_rate: int = Field(100, serialization_alias="onTimeDeliveryRate")
+    rating: Optional[float] = None
+    on_time_delivery_rate: Optional[int] = Field(None, serialization_alias="onTimeDeliveryRate")
     compliance_score: int = Field(100, serialization_alias="complianceScore")
     completed_projects: int = Field(0, serialization_alias="completedProjects")
     total_earnings_or_spent: float = Field(0.0, serialization_alias="totalEarningsOrSpent")
     currency: str = "USD"
     badges: List[str] = Field(default_factory=list)
+    is_unrated: bool = Field(False, serialization_alias="isUnrated")
+
+
+class ContractReviewRequest(BaseModel):
+    """Client review and rating payload for a completed contract."""
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    rating: float = Field(..., ge=1.0, le=5.0, description="Star rating from 1.0 to 5.0")
+    review: Optional[str] = Field(None, max_length=1000, description="Optional written review feedback")
+
+
+class ContractReviewResponse(BaseMarketplaceSchema):
+    """Response confirming submitted review on a contract."""
+    contract_id: str = Field(..., serialization_alias="contractId")
+    client_id: str = Field(..., serialization_alias="clientId")
+    freelancer_id: str = Field(..., serialization_alias="freelancerId")
+    client_rating: float = Field(..., serialization_alias="clientRating")
+    client_review: Optional[str] = Field(None, serialization_alias="clientReview")
+    reviewed_at: str = Field(..., serialization_alias="reviewedAt")
 
 
 class ApplicationCreateRequest(BaseModel):

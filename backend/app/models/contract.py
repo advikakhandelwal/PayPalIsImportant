@@ -1,6 +1,6 @@
 import enum
 from decimal import Decimal
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, Enum, ForeignKey, CheckConstraint
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, Enum, ForeignKey, CheckConstraint, Float, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -48,6 +48,11 @@ class Contract(Base):
     # Devansh's PayPal Hooks
     paypal_auth_id = Column(String(120), nullable=True, index=True)
     paypal_capture_id = Column(String(120), nullable=True)
+
+    # Phase 6: Client Review & Rating
+    client_rating = Column(Float, nullable=True)
+    client_review = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamp
     created_at = Column(DateTime(timezone=True), server_default=func.now())

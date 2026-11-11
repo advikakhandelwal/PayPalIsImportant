@@ -36,8 +36,9 @@ Test Coverage:
 
 import sys
 import os
+import uuid
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -50,6 +51,7 @@ if BACKEND_DIR not in sys.path:
 from fastapi.testclient import TestClient
 from app.main import app
 from app.database import Base, engine, SessionLocal
+from app.models.user import User, UserRole
 from app.models.project import Project, ProjectStatus
 from app.models.contract import Contract, EscrowStatus
 from app.models.milestone import Milestone, MilestoneStatus
@@ -1414,6 +1416,566 @@ def test_group_application_lifecycle():
 
 
 # ---------------------------------------------------------------------------
+# Test Group 9: Reputation, Reviews & Trust Score Engine (Phase 6)
+# ---------------------------------------------------------------------------
+def test_group_reputation():
+    print("\n── Group 9: Reputation, Reviews & Trust Score Engine (Phase 6) ─────")
+
+    def _create_reputation_fixture(prefix="rep-talent"):
+        clean_prefix = prefix.split("@")[0]
+        email = f"{clean_prefix}-{uuid.uuid4().hex[:8]}@trustpay.ai"
+        db = SessionLocal()
+        try:
+            client_user = db.query(User).filter(User.id == 1).first()
+
+            freelancer_user = User(
+                name="Elena Rostova",
+                email=email,
+                hashed_password="mock-password-hash",
+                role=UserRole.FREELANCER,
+                domain="Smart Contract Security",
+                bio="Auditor specializing in zero-day contract vulnerabilities and escrow verification.",
+                trust_score=100.0,
+                rating=0.0,
+                on_time_rate=100,
+                compliance_score=100,
+                completed_projects=0,
+                total_earnings_or_spent=0.0,
+                badges=[],
+            )
+            db.add(freelancer_user)
+            db.commit()
+            db.refresh(freelancer_user)
+
+            proj = Project(
+                client_id=client_user.id,
+                client_name=client_user.name,
+                title="Phase 6 Audit Contract Project",
+                description="Testing Phase 6 review and reputation mechanics.",
+                total_budget=Decimal("2000.00"),
+                currency="USD",
+                status=ProjectStatus.IN_PROGRESS,
+            )
+            db.add(proj)
+            db.commit()
+            db.refresh(proj)
+
+            contract = Contract(
+                project_id=proj.id,
+                client_id=client_user.id,
+                talent_id=freelancer_user.id,
+                project_title=proj.title,
+                client_name=client_user.name,
+                talent_name=freelancer_user.name,
+                total_budget=Decimal("2000.00"),
+                held_in_escrow_amount=Decimal("0.00"),
+                released_amount=Decimal("2000.00"),
+                currency="USD",
+                escrow_status=EscrowStatus.COMPLETED,
+                paypal_auth_id="PAYPAL-AUTH-REP-TEST",
+                paypal_capture_id=None,  # Unconfirmed capture by default
+            )
+            db.add(contract)
+            db.commit()
+            db.refresh(contract)
+
+            now = datetime.utcnow()
+            m = Milestone(
+                contract_id=contract.id,
+                step_number=1,
+                title="Complete Audit Scope",
+                description="Full scope review.",
+                percentage=100,
+                amount=Decimal("2000.00"),
+                currency="USD",
+                status=MilestoneStatus.RELEASED,
+                revision_count=0,
+                deadline=now + timedelta(days=3),
+            )
+            db.add(m)
+            db.commit()
+            db.refresh(m)
+
+            sub = Submission(
+                milestone_id=m.id,
+                submission_type=SubmissionType.URL,
+                submission_url="https://github.com/audit-report",
+                notes="Delivered before deadline.",
+                verification_status=VerificationStatus.COMPLETED,
+                revision_number=1,
+                review_status="APPROVED",
+                submitted_at=now,
+            )
+            db.add(sub)
+            db.commit()
+
+            return client_user.id, freelancer_user.id, contract.id, m.id
+        finally:
+            db.close()
+
+    def test_unrated_freelancer_scorecard():
+        # Fresh freelancer with 0 completed contracts must be unrated, not false 5.0 stars
+        db = SessionLocal()
+        try:
+            fresh_user = User(
+                name="Fresh Junior Talent",
+                email=f"fresh-talent-{uuid.uuid4().hex[:8]}@trustpay.ai",
+                hashed_password="mock-password-hash",
+                role=UserRole.FREELANCER,
+                domain="Frontend Dev",
+                bio="Junior developer seeking first escrow contract on TrustPay.",
+                trust_score=100.0,
+                rating=0.0,
+                on_time_rate=100,
+                compliance_score=100,
+                completed_projects=0,
+                total_earnings_or_spent=0.0,
+                badges=[],
+            )
+            db.add(fresh_user)
+            db.commit()
+            db.refresh(fresh_user)
+            uid = fresh_user.id
+        finally:
+            db.close()
+
+        res = client.get(f"/api/users/{uid}/scorecard")
+        assert res.status_code == 200, f"Expected 200, got {res.status_code}: {res.text}"
+        data = res.json()
+
+        assert data["completedProjects"] == 0
+        assert data["rating"] is None
+        assert data["isUnrated"] is True
+        assert data["badges"] == []
+
+    def test_review_missing_identity_rejected():
+        _, _, cid, _ = _create_reputation_fixture("unauth-rev@trustpay.ai")
+        res = client.post(f"/api/contracts/{cid}/review", json={"rating": 5.0})
+        assert res.status_code == 401
+
+    def test_review_unauthorized_user_rejected():
+        _, talent_id, cid, _ = _create_reputation_fixture("freelancer-self-rev@trustpay.ai")
+        # Freelancer cannot review own contract
+        talent_headers = {"X-User-Id": str(talent_id)}
+        res = client.post(f"/api/contracts/{cid}/review", json={"rating": 5.0}, headers=talent_headers)
+        assert res.status_code == 403
+        assert "Only the assigned client" in res.json()["detail"]
+
+        # Unrelated third-party user cannot review contract
+        res_unrelated = client.post(f"/api/contracts/{cid}/review", json={"rating": 5.0}, headers=DEV_UNASSIGNED_USER)
+        assert res_unrelated.status_code == 403
+        assert "Only the assigned client" in res.json()["detail"]
+
+    def test_review_uncompleted_contract_rejected():
+        # Setup contract in HELD_IN_ESCROW status
+        db = SessionLocal()
+        try:
+            c = Contract(
+                project_id=1,
+                client_id=1,
+                talent_id=2,
+                project_title="In-Progress Project",
+                client_name="Acme",
+                talent_name="Vachan",
+                total_budget=Decimal("1000.00"),
+                held_in_escrow_amount=Decimal("1000.00"),
+                released_amount=Decimal("0.00"),
+                currency="USD",
+                escrow_status=EscrowStatus.HELD_IN_ESCROW,
+            )
+            db.add(c)
+            db.commit()
+            db.refresh(c)
+            cid = c.id
+        finally:
+            db.close()
+
+        res = client.post(f"/api/contracts/{cid}/review", json={"rating": 4.5}, headers=DEV_CLIENT_IDENTITY)
+        assert res.status_code == 400
+        assert "Reviews are only permitted for COMPLETED contracts" in res.json()["detail"]
+
+    def test_client_review_success_and_reputation_update():
+        _, talent_id, cid, _ = _create_reputation_fixture("reviewed-talent@trustpay.ai")
+
+        payload = {"rating": 4.8, "review": "Exceptional smart contract vulnerability audit. Punctual and thorough."}
+        res = client.post(f"/api/contracts/{cid}/review", json=payload, headers=DEV_CLIENT_IDENTITY)
+        assert res.status_code == 200, f"Expected 200, got {res.status_code}: {res.text}"
+        data = res.json()
+        assert data["contractId"] == str(cid)
+        assert data["clientRating"] == 4.8
+        assert data["clientReview"] == payload["review"]
+
+        # Verify freelancer's live scorecard reflects review
+        sc_res = client.get(f"/api/users/{talent_id}/scorecard")
+        assert sc_res.status_code == 200
+        sc = sc_res.json()
+        assert sc["completedProjects"] == 1
+        assert sc["rating"] == 4.8
+        assert sc["isUnrated"] is False
+
+    def test_duplicate_review_rejected():
+        _, _, cid, _ = _create_reputation_fixture("dup-rev-talent@trustpay.ai")
+        # First review
+        res1 = client.post(f"/api/contracts/{cid}/review", json={"rating": 4.5}, headers=DEV_CLIENT_IDENTITY)
+        assert res1.status_code == 200
+
+        # Duplicate review attempt
+        res2 = client.post(f"/api/contracts/{cid}/review", json={"rating": 5.0}, headers=DEV_CLIENT_IDENTITY)
+        assert res2.status_code == 400
+        assert "already been submitted" in res2.json()["detail"]
+
+    def test_recalculation_idempotency_across_contracts():
+        _, talent_id, cid1, _ = _create_reputation_fixture("idempotent-talent@trustpay.ai")
+
+        # Review contract 1 with 4.0 stars
+        r1 = client.post(f"/api/contracts/{cid1}/review", json={"rating": 4.0}, headers=DEV_CLIENT_IDENTITY)
+        assert r1.status_code == 200
+
+        # Add contract 2 for same freelancer and complete it with 5.0 stars
+        db = SessionLocal()
+        try:
+            c2 = Contract(
+                project_id=1,
+                client_id=1,
+                talent_id=talent_id,
+                project_title="Second Completed Project",
+                client_name="Acme",
+                talent_name="Elena",
+                total_budget=Decimal("1000.00"),
+                held_in_escrow_amount=Decimal("0.00"),
+                released_amount=Decimal("1000.00"),
+                currency="USD",
+                escrow_status=EscrowStatus.COMPLETED,
+            )
+            db.add(c2)
+            db.commit()
+            db.refresh(c2)
+            cid2 = c2.id
+        finally:
+            db.close()
+
+        r2 = client.post(f"/api/contracts/{cid2}/review", json={"rating": 5.0}, headers=DEV_CLIENT_IDENTITY)
+        assert r2.status_code == 200
+
+        # Average rating = (4.0 + 5.0) / 2 = 4.5
+        sc1 = client.get(f"/api/users/{talent_id}/scorecard").json()
+        assert sc1["completedProjects"] == 2
+        assert sc1["rating"] == 4.5
+
+        # Re-fetching repeatedly returns exact same 4.5 with zero inflation
+        sc2 = client.get(f"/api/users/{talent_id}/scorecard").json()
+        sc3 = client.get(f"/api/users/{talent_id}/scorecard").json()
+        assert sc2["completedProjects"] == 2
+        assert sc2["rating"] == 4.5
+        assert sc3["completedProjects"] == 2
+        assert sc3["rating"] == 4.5
+
+    def test_on_time_rate_and_deadline_scenarios():
+        db = SessionLocal()
+        try:
+            freelancer = User(
+                name="Punctual Dev",
+                email=f"punctual-dev-{uuid.uuid4().hex[:8]}@trustpay.ai",
+                hashed_password="mock",
+                role=UserRole.FREELANCER,
+                domain="API Dev",
+                bio="High precision API development.",
+            )
+            db.add(freelancer)
+            db.commit()
+            db.refresh(freelancer)
+            fid = freelancer.id
+
+            now = datetime.utcnow()
+            # Contract with 2 milestones: M1 on time, M2 late
+            c = Contract(
+                project_id=1,
+                client_id=1,
+                talent_id=fid,
+                project_title="Punctuality Test",
+                client_name="Acme",
+                talent_name=freelancer.name,
+                total_budget=Decimal("2000.00"),
+                held_in_escrow_amount=Decimal("0.00"),
+                released_amount=Decimal("2000.00"),
+                currency="USD",
+                escrow_status=EscrowStatus.COMPLETED,
+            )
+            db.add(c)
+            db.commit()
+            db.refresh(c)
+
+            # M1: Deadline in 2 days, submitted yesterday -> ON TIME
+            m1 = Milestone(
+                contract_id=c.id,
+                step_number=1,
+                title="M1",
+                description="M1",
+                percentage=50,
+                amount=Decimal("1000.00"),
+                status=MilestoneStatus.RELEASED,
+                deadline=now + timedelta(days=2),
+            )
+            db.add(m1)
+            db.commit()
+            db.refresh(m1)
+
+            s1 = Submission(
+                milestone_id=m1.id,
+                submission_type=SubmissionType.URL,
+                submission_url="https://github.com/m1",
+                verification_status=VerificationStatus.COMPLETED,
+                revision_number=1,
+                review_status="APPROVED",
+                submitted_at=now - timedelta(days=1),
+            )
+            db.add(s1)
+
+            # M2: Deadline was 2 days ago, submitted today -> LATE
+            m2 = Milestone(
+                contract_id=c.id,
+                step_number=2,
+                title="M2",
+                description="M2",
+                percentage=50,
+                amount=Decimal("1000.00"),
+                status=MilestoneStatus.RELEASED,
+                deadline=now - timedelta(days=2),
+            )
+            db.add(m2)
+            db.commit()
+            db.refresh(m2)
+
+            s2 = Submission(
+                milestone_id=m2.id,
+                submission_type=SubmissionType.URL,
+                submission_url="https://github.com/m2",
+                verification_status=VerificationStatus.COMPLETED,
+                revision_number=1,
+                review_status="APPROVED",
+                submitted_at=now,
+            )
+            db.add(s2)
+            db.commit()
+        finally:
+            db.close()
+
+        # 1 out of 2 on time -> 50%
+        sc = client.get(f"/api/users/{fid}/scorecard").json()
+        assert sc["onTimeDeliveryRate"] == 50
+
+    def test_compliance_score_deterministic_formula():
+        db = SessionLocal()
+        try:
+            freelancer = User(
+                name="Compliance Dev",
+                email=f"comp-dev-{uuid.uuid4().hex[:8]}@trustpay.ai",
+                hashed_password="mock",
+                role=UserRole.FREELANCER,
+                domain="Compliance Testing",
+                bio="Testing deterministic compliance.",
+            )
+            db.add(freelancer)
+            db.commit()
+            db.refresh(freelancer)
+            fid = freelancer.id
+
+            c = Contract(
+                project_id=1,
+                client_id=1,
+                talent_id=fid,
+                project_title="Compliance Test",
+                client_name="Acme",
+                talent_name=freelancer.name,
+                total_budget=Decimal("2000.00"),
+                held_in_escrow_amount=Decimal("0.00"),
+                released_amount=Decimal("2000.00"),
+                currency="USD",
+                escrow_status=EscrowStatus.COMPLETED,
+            )
+            db.add(c)
+            db.commit()
+            db.refresh(c)
+
+            # Milestone 1: 0 revisions -> 100
+            m1 = Milestone(
+                contract_id=c.id,
+                step_number=1,
+                title="M1",
+                description="M1",
+                percentage=50,
+                amount=Decimal("1000.00"),
+                status=MilestoneStatus.RELEASED,
+                revision_count=0,
+            )
+            # Milestone 2: 1 revision -> 85
+            m2 = Milestone(
+                contract_id=c.id,
+                step_number=2,
+                title="M2",
+                description="M2",
+                percentage=50,
+                amount=Decimal("1000.00"),
+                status=MilestoneStatus.RELEASED,
+                revision_count=1,
+            )
+            db.add_all([m1, m2])
+            db.commit()
+        finally:
+            db.close()
+
+        # Average = (100 + 85) / 2 = 92.5 -> round to 93 (or 92)
+        sc = client.get(f"/api/users/{fid}/scorecard").json()
+        assert sc["complianceScore"] in (92, 93)
+
+    def test_client_spending_and_freelancer_earnings_isolated():
+        # User 1 is CLIENT (Acme), User 2 is FREELANCER (Vachan)
+        sc_client = client.get("/api/users/1/scorecard").json()
+        sc_talent = client.get("/api/users/2/scorecard").json()
+
+        # Client spending reflects client contracts
+        assert isinstance(sc_client["totalEarningsOrSpent"], (int, float))
+        # Freelancer earnings reflect talent contracts
+        assert isinstance(sc_talent["totalEarningsOrSpent"], (int, float))
+        # Client does not have freelancer rating
+        assert sc_client["rating"] is None
+
+    def test_payment_confirmation_boundary_for_badges():
+        # When paypal_capture_id is None, "Escrow Protected" badge is withheld
+        _, talent_id, cid, _ = _create_reputation_fixture("escrow-badge-test")
+        sc_before = client.get(f"/api/users/{talent_id}/scorecard").json()
+        assert "Escrow Protected" not in sc_before["badges"]
+
+        # When paypal_capture_id is confirmed, "Escrow Protected" is awarded
+        db = SessionLocal()
+        try:
+            c = db.query(Contract).filter(Contract.id == cid).first()
+            c.paypal_capture_id = "PAYPAL-CAPTURE-CONFIRMED-99"
+            db.commit()
+        finally:
+            db.close()
+
+        sc_after = client.get(f"/api/users/{talent_id}/scorecard").json()
+        assert "Escrow Protected" in sc_after["badges"]
+
+    def test_earnings_require_confirmed_payment():
+        """total_earnings_or_spent must be 0 when paypal_capture_id is absent,
+        and must reflect released_amount only after capture is confirmed."""
+        _, talent_id, cid, _ = _create_reputation_fixture("earnings-confirm")
+
+        # Before confirmation: earnings should be 0.0
+        sc_before = client.get(f"/api/users/{talent_id}/scorecard").json()
+        assert sc_before["totalEarningsOrSpent"] == 0.0, (
+            f"Expected 0.0 without confirmed capture, got {sc_before['totalEarningsOrSpent']}"
+        )
+
+        # Confirm PayPal capture
+        db = SessionLocal()
+        try:
+            c = db.query(Contract).filter(Contract.id == cid).first()
+            c.paypal_capture_id = "PAYPAL-CAPTURE-EARNINGS-TEST"
+            db.commit()
+        finally:
+            db.close()
+
+        # After confirmation: earnings should reflect released_amount (2000.00)
+        sc_after = client.get(f"/api/users/{talent_id}/scorecard").json()
+        assert sc_after["totalEarningsOrSpent"] == 2000.0, (
+            f"Expected 2000.0 with confirmed capture, got {sc_after['totalEarningsOrSpent']}"
+        )
+
+    def test_on_time_rate_timezone_aware_and_naive():
+        """On-time comparison must not crash when mixing timezone-aware and
+        timezone-naive datetimes, and must produce the correct result."""
+        db = SessionLocal()
+        try:
+            freelancer = User(
+                name="TZ Test Dev",
+                email=f"tz-test-dev-{uuid.uuid4().hex[:8]}@trustpay.ai",
+                hashed_password="mock",
+                role=UserRole.FREELANCER,
+                domain="Backend Dev",
+                bio="Testing timezone handling in on-time rate.",
+            )
+            db.add(freelancer)
+            db.commit()
+            db.refresh(freelancer)
+            fid = freelancer.id
+
+            c = Contract(
+                project_id=1,
+                client_id=1,
+                talent_id=fid,
+                project_title="TZ Handling Test",
+                client_name="Acme",
+                talent_name=freelancer.name,
+                total_budget=Decimal("1000.00"),
+                held_in_escrow_amount=Decimal("0.00"),
+                released_amount=Decimal("1000.00"),
+                currency="USD",
+                escrow_status=EscrowStatus.COMPLETED,
+            )
+            db.add(c)
+            db.commit()
+            db.refresh(c)
+
+            # Milestone with timezone-AWARE deadline (UTC+5:30)
+            from datetime import timezone as tz
+            ist = tz(timedelta(hours=5, minutes=30))
+            aware_deadline = datetime(2026, 12, 1, 23, 59, 0, tzinfo=ist)
+
+            m = Milestone(
+                contract_id=c.id,
+                step_number=1,
+                title="TZ Milestone",
+                description="Timezone handling test.",
+                percentage=100,
+                amount=Decimal("1000.00"),
+                status=MilestoneStatus.RELEASED,
+                deadline=aware_deadline,
+            )
+            db.add(m)
+            db.commit()
+            db.refresh(m)
+
+            # Submission with timezone-NAIVE timestamp, well before deadline in UTC
+            naive_sub_time = datetime(2026, 12, 1, 10, 0, 0)
+            sub = Submission(
+                milestone_id=m.id,
+                submission_type=SubmissionType.URL,
+                submission_url="https://github.com/tz-test",
+                verification_status=VerificationStatus.COMPLETED,
+                revision_number=1,
+                review_status="APPROVED",
+                submitted_at=naive_sub_time,
+            )
+            db.add(sub)
+            db.commit()
+        finally:
+            db.close()
+
+        # Must evaluate correctly as on-time (100%) without raising TypeError
+        sc = client.get(f"/api/users/{fid}/scorecard").json()
+        assert sc["onTimeDeliveryRate"] == 100, (
+            f"Expected 100% on-time rate, got {sc['onTimeDeliveryRate']}"
+        )
+
+    run_test("GET  /api/users/{id}/scorecard returns unrated status for fresh user without false 5 stars", test_unrated_freelancer_scorecard)
+    run_test("POST /api/contracts/{id}/review rejects missing caller identity with 401", test_review_missing_identity_rejected)
+    run_test("POST /api/contracts/{id}/review rejects unauthorized user with 403 (client only)", test_review_unauthorized_user_rejected)
+    run_test("POST /api/contracts/{id}/review rejects review on uncompleted contract with 400", test_review_uncompleted_contract_rejected)
+    run_test("POST /api/contracts/{id}/review succeeds for assigned client and updates live scorecard", test_client_review_success_and_reputation_update)
+    run_test("POST /api/contracts/{id}/review rejects duplicate review on same contract with 400", test_duplicate_review_rejected)
+    run_test("GET  /api/users/{id}/scorecard recalculation is strictly idempotent across multiple contracts", test_recalculation_idempotency_across_contracts)
+    run_test("GET  /api/users/{id}/scorecard evaluates on-time delivery against initial milestone deadline", test_on_time_rate_and_deadline_scenarios)
+    run_test("GET  /api/users/{id}/scorecard applies deterministic compliance formula (100/85/70/55)", test_compliance_score_deterministic_formula)
+    run_test("GET  /api/users/{id}/scorecard isolates freelancer earnings from client expenditures", test_client_spending_and_freelancer_earnings_isolated)
+    run_test("GET  /api/users/{id}/scorecard withholds payment-related badges without confirmed PayPal capture", test_payment_confirmation_boundary_for_badges)
+    run_test("GET  /api/users/{id}/scorecard earnings require confirmed PayPal payment evidence", test_earnings_require_confirmed_payment)
+    run_test("GET  /api/users/{id}/scorecard handles timezone-aware and naive datetime comparison safely", test_on_time_rate_timezone_aware_and_naive)
+
+
+# ---------------------------------------------------------------------------
 # Main Runner
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
@@ -1430,6 +1992,7 @@ if __name__ == "__main__":
     test_group_milestone_approval()
     test_group_milestone_revisions()
     test_group_application_lifecycle()
+    test_group_reputation()
 
     total = len(_results)
     passed = sum(1 for r in _results if r[0] == PASS)
