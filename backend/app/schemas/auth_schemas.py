@@ -104,6 +104,19 @@ class UserProfileUpdateRequest(BaseModel):
     domain: Optional[str] = Field(None, max_length=120)
     bio: Optional[str] = Field(None)
     company_name: Optional[str] = Field(None, alias="companyName", max_length=120)
+    paypal_payout_email: Optional[str] = Field(None, alias="paypalPayoutEmail", max_length=255)
+
+    @field_validator("paypal_payout_email")
+    @classmethod
+    def validate_payout_email(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        clean = v.strip().lower()
+        if not clean:
+            return ""
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", clean):
+            raise ValueError("Invalid PayPal payout email format.")
+        return clean
 
 
 class UserAuthResponse(BaseAuthSchema):
@@ -115,6 +128,7 @@ class UserAuthResponse(BaseAuthSchema):
     domain: Optional[str] = None
     bio: Optional[str] = None
     company_name: Optional[str] = Field(None, serialization_alias="companyName")
+    paypal_payout_email: Optional[str] = Field(None, serialization_alias="paypalPayoutEmail")
     created_at: Optional[str] = Field(None, serialization_alias="createdAt")
     trust_scorecard: Optional[TrustScorecardData] = Field(None, serialization_alias="trustScorecard")
 

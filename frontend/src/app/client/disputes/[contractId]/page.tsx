@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useMarketplace } from "@/context/MarketplaceContext";
+import { RequireAuth } from "@/components/auth/RequireAuth";
 import { useDisputes } from "@/context/DisputeContext";
 import { useNotifications } from "@/context/NotificationContext";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
@@ -230,7 +231,8 @@ export default function DisputeWorkspacePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/50 py-10 px-4 sm:px-6 lg:px-8">
+    <RequireAuth>
+      <div className="min-h-screen bg-gray-50/50 py-10 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Navigation Breadcrumb */}
         <div className="flex items-center justify-between">
@@ -950,5 +952,6 @@ export default function DisputeWorkspacePage() {
         )}
       </div>
     </div>
+    </RequireAuth>
   );
 }

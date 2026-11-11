@@ -14,6 +14,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from decimal import Decimal
 import logging
+import os
+import sys
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -33,6 +35,16 @@ from app.schemas.marketplace_schemas import (
 from app.utils.id_converter import resolve_entity_id
 from app.utils.auth import get_current_user
 from app.api.contract_routes import _format_contract_response
+from app.models.paypal_transaction import (
+    PayPalOperationType,
+    PayPalTransaction,
+    PayPalTxStatus,
+)
+from app.services.paypal_service import (
+    PayPalError,
+    PayPalService,
+    build_idempotency_key,
+)
 
 logger = logging.getLogger("trustpay.application_routes")
 router = APIRouter(prefix="/api/projects", tags=["Project Applications"])
@@ -41,36 +53,82 @@ apps_router = APIRouter(prefix="/api/applications", tags=["Applications Direct"]
 
 def _trigger_paypal_escrow_order(
     contract: Contract,
+    db: Optional[Session] = None,
 ) -> Dict[str, Any]:
     """
-    ===========================================================================
-    INTEGRATION BOUNDARY: Devansh's PayPal Escrow Authorization Engine
-    ===========================================================================
-    Triggered when an application is accepted and a new Escrow Contract is created.
-
-    RESPONSIBILITIES (Assigned to Devansh):
-    1. Invoke PayPal Orders v2 API to create an order with intent: "AUTHORIZE".
-    2. Obtain the authorization approval URL and return it to the client for funding.
-    3. On authorization capture/approval, store the auth ID in `contract.paypal_auth_id`
-       and transition escrow_status to `HELD_IN_ESCROW`.
-
-    CURRENT STATUS:
-    - Non-blocking integration boundary stub.
-    - Contract and milestones are created in the database ledger.
-    - No real PayPal API calls are executed here.
-    ===========================================================================
+    PayPal Escrow Authorization Order Hook (Devansh's Scope):
+    - When PayPal credentials (or PAYPAL_MODE=mock) are configured, creates an
+      Orders v2 order (`intent: AUTHORIZE`) and logs it in `paypal_transactions`.
+    - Keeps `contract.paypal_auth_id = None` and `escrow_status = AWAITING_AUTHORIZATION`
+      until the client completes payer approval and invokes `/api/paypal/contracts/{id}/authorize`.
+    - When PayPal is unconfigured in local/test runs, remains a safe non-blocking hook.
     """
-    logger.info(
-        f"[PayPal Integration Hook] Contract {contract.id} created for Project {contract.project_id}. "
-        f"Ready for Devansh's PayPal escrow order authorization."
+    paypal = PayPalService()
+    is_pytest_non_mock = (
+        "pytest" in sys.modules
+        and paypal.mode != "mock"
+        and os.getenv("PAYPAL_ALLOW_LIVE_IN_TESTS", "false").lower() != "true"
     )
-    return {
-        "status": "AWAITING_PAYPAL_AUTHORIZATION",
-        "contract_id": contract.id,
-        "amount": float(contract.total_budget),
-        "currency": contract.currency,
-        "note": "Contract instantiated in database; external PayPal authorization awaiting Devansh's SDK integration.",
-    }
+    if not paypal.is_configured() or is_pytest_non_mock:
+        logger.info(
+            f"[PayPal Integration Hook] Contract {contract.id} created for Project {contract.project_id}. "
+            f"PayPal credentials not configured; awaiting manual/mock authorization."
+        )
+        return {
+            "status": "AWAITING_PAYPAL_AUTHORIZATION",
+            "contract_id": contract.id,
+            "amount": float(contract.total_budget),
+            "currency": contract.currency,
+            "order_id": None,
+            "approval_url": None,
+        }
+
+    idem_key = build_idempotency_key("order", contract.id, f"{Decimal(str(contract.total_budget)):.2f}")
+    try:
+        order_res = paypal.create_escrow_order(
+            contract_id=contract.id,
+            amount=contract.total_budget,
+            currency=contract.currency,
+            description=f"TrustPay Escrow: {contract.project_title}",
+            idempotency_key=idem_key,
+        )
+        if db is not None:
+            tx = PayPalTransaction(
+                contract_id=contract.id,
+                milestone_id=None,
+                operation=PayPalOperationType.CREATE_ORDER,
+                status=PayPalTxStatus.COMPLETED,
+                idempotency_key=idem_key,
+                paypal_order_id=order_res["order_id"],
+                amount=contract.total_budget,
+                currency=contract.currency,
+                mode=order_res["mode"],
+                raw_response=order_res["raw"],
+            )
+            db.add(tx)
+        logger.info(
+            f"[PayPal Integration Hook] Created Orders v2 order {order_res['order_id']} "
+            f"for Contract {contract.id} ({contract.total_budget} {contract.currency})."
+        )
+        return {
+            "status": "ORDER_CREATED",
+            "contract_id": contract.id,
+            "order_id": order_res["order_id"],
+            "approval_url": order_res.get("approval_url"),
+            "amount": float(contract.total_budget),
+            "currency": contract.currency,
+        }
+    except PayPalError as exc:
+        logger.warning(
+            f"[PayPal Integration Hook] Non-blocking order creation failure for Contract {contract.id}: {exc.message}"
+        )
+        return {
+            "status": "AWAITING_PAYPAL_AUTHORIZATION",
+            "contract_id": contract.id,
+            "amount": float(contract.total_budget),
+            "currency": contract.currency,
+            "error": exc.message,
+        }
 
 
 def _format_application_response(app: Application) -> ApplicationResponse:
@@ -429,7 +487,18 @@ def _execute_application_acceptance(
             # E.3 Create milestones — ALL start LOCKED while escrow is AWAITING_AUTHORIZATION.
             # When Devansh's PayPal auth succeeds and escrow transitions to HELD_IN_ESCROW,
             # step 1 should be activated externally.
+            def _parse_deadline(raw_val: Any, fallback_dt: Optional[datetime]) -> Optional[datetime]:
+                if isinstance(raw_val, datetime):
+                    return raw_val
+                if isinstance(raw_val, str) and raw_val.strip():
+                    try:
+                        return datetime.fromisoformat(raw_val.strip().replace("Z", "+00:00"))
+                    except ValueError:
+                        return fallback_dt
+                return fallback_dt
+
             for step_num, pct, amt, bp in milestone_specs:
+                ms_deadline = _parse_deadline(bp.get("deadline"), getattr(project, "deadline", None))
                 m = Milestone(
                     contract_id=new_contract.id,
                     step_number=step_num,
@@ -439,6 +508,7 @@ def _execute_application_acceptance(
                     percentage=pct,
                     amount=amt,
                     currency=new_contract.currency,
+                    deadline=ms_deadline,
                     status=MilestoneStatus.LOCKED,
                     revision_count=0,
                     max_revisions_reached=False,
@@ -455,6 +525,7 @@ def _execute_application_acceptance(
                 percentage=100,
                 amount=agreed_budget,
                 currency=new_contract.currency,
+                deadline=getattr(project, "deadline", None),
                 status=MilestoneStatus.LOCKED,
                 revision_count=0,
                 max_revisions_reached=False,
@@ -462,7 +533,7 @@ def _execute_application_acceptance(
             db.add(m)
 
         # F. PayPal Integration Hook (Devansh's Scope)
-        _trigger_paypal_escrow_order(new_contract)
+        _trigger_paypal_escrow_order(new_contract, db=db)
 
         db.commit()
         db.refresh(new_contract)

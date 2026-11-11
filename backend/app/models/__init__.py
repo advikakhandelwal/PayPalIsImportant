@@ -5,6 +5,8 @@ from app.models.contract import Contract, EscrowStatus
 from app.models.milestone import Milestone, MilestoneStatus
 from app.models.submission import Submission, SubmissionType, VerificationStatus
 from app.models.application import Application, ApplicationStatus
+from app.models.paypal_transaction import PayPalTransaction, PayPalOperationType, PayPalTxStatus
+from app.models.contract_message import ContractMessage
 
 __all__ = [
     "Base",
@@ -23,4 +25,8 @@ __all__ = [
     "VerificationStatus",
     "Application",
     "ApplicationStatus",
+    "PayPalTransaction",
+    "PayPalOperationType",
+    "PayPalTxStatus",
+    "ContractMessage",
 ]

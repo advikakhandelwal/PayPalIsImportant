@@ -12,6 +12,7 @@ import {
   RevisionRequest,
 } from "@/types";
 import { apiClient, getStoredToken } from "@/services/api";
+import { useAuth } from "@/context/AuthContext";
 
 const EMPTY_CONTRACT: EscrowContract = {
   id: "",
@@ -38,7 +39,7 @@ interface MarketplaceContextType {
   createProject: (newProject: Omit<Project, "id" | "createdAt">) => Promise<void>;
   updateProject: (projectId: string, updatedData: Partial<Project>) => void;
   submitApplication: (application: Omit<Application, "id" | "createdAt">) => Promise<void>;
-  acceptApplication: (applicationId: string, currentUserId?: string) => Promise<void>;
+  acceptApplication: (applicationId: string, currentUserId?: string) => Promise<EscrowContract>;
   rejectApplication: (applicationId: string, currentUserId?: string) => Promise<void>;
   submitDeliverable: (
     contractId: string,
@@ -64,6 +65,14 @@ interface MarketplaceContextType {
     subtaskId: string,
     status: "PENDING" | "IN_PROGRESS" | "COMPLETED"
   ) => void;
+  createPayPalEscrowOrder: (contractId: string) => Promise<{
+    orderId: string;
+    approvalUrl?: string | null;
+    mode: string;
+  }>;
+  authorizePayPalEscrow: (contractId: string, orderId?: string, simulate?: boolean) => Promise<void>;
+  releaseMilestoneOverride: (contractId: string, milestoneId: string, password: string, reason?: string) => Promise<void>;
+  releaseContractUpfront: (contractId: string, password: string, reason?: string) => Promise<void>;
   refreshMarketplace: () => Promise<void>;
   isLoading: boolean;
 }
@@ -71,6 +80,7 @@ interface MarketplaceContextType {
 const MarketplaceContext = createContext<MarketplaceContextType | undefined>(undefined);
 
 export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, currentUser } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [contracts, setContracts] = useState<EscrowContract[]>([]);
@@ -83,7 +93,7 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const projData = await apiClient.getProjects().catch(() => []);
       setProjects(projData || []);
 
-      // 2. Fetch authenticated data if JWT token is stored
+      // 2. Fetch authenticated data only when JWT token exists
       const token = getStoredToken();
       if (token) {
         const [contractsData, appsData] = await Promise.all([
@@ -92,6 +102,9 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
         ]);
         setContracts(contractsData || []);
         setApplications(appsData || []);
+      } else {
+        setContracts([]);
+        setApplications([]);
       }
     } catch {
       // Fail safely
@@ -100,10 +113,10 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, []);
 
-  // Initial fetch on mount
+  // Re-fetch immediately on mount AND whenever auth identity changes (login/logout)
   useEffect(() => {
     fetchAllData();
-  }, [fetchAllData]);
+  }, [fetchAllData, isAuthenticated, currentUser.id]);
 
   const activeContract: EscrowContract = contracts.length > 0 ? contracts[0] : EMPTY_CONTRACT;
 
@@ -183,6 +196,7 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       // Refresh data from database
       await fetchAllData();
+      return newContract;
     },
     [applications, fetchAllData]
   );
@@ -304,6 +318,49 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
     []
   );
 
+  const createPayPalEscrowOrder = useCallback(async (contractId: string) => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+    const res = await apiClient.createPayPalEscrowOrder(contractId, {
+      returnUrl: `${origin}/client/dashboard?tab=contracts&paypal=success&contractId=${contractId}`,
+      cancelUrl: `${origin}/client/dashboard?tab=contracts&paypal=cancel&contractId=${contractId}`,
+    });
+    return {
+      orderId: res.orderId,
+      approvalUrl: res.approvalUrl,
+      mode: res.mode,
+    };
+  }, []);
+
+  const authorizePayPalEscrow = useCallback(
+    async (contractId: string, orderId?: string, simulate?: boolean) => {
+      await apiClient.authorizePayPalEscrow(contractId, { orderId, simulate });
+      await fetchAllData();
+    },
+    [fetchAllData]
+  );
+
+  const releaseMilestoneOverride = useCallback(
+    async (contractId: string, milestoneId: string, password: string, reason?: string) => {
+      const updated = await apiClient.releaseMilestoneOverride(contractId, milestoneId, password, reason);
+      if (updated) {
+        setContracts((prev) => prev.map((c) => (c.id === contractId ? updated : c)));
+      }
+      await fetchAllData();
+    },
+    [fetchAllData]
+  );
+
+  const releaseContractUpfront = useCallback(
+    async (contractId: string, password: string, reason?: string) => {
+      const updated = await apiClient.releaseContractUpfront(contractId, password, reason);
+      if (updated) {
+        setContracts((prev) => prev.map((c) => (c.id === contractId ? updated : c)));
+      }
+      await fetchAllData();
+    },
+    [fetchAllData]
+  );
+
   return (
     <MarketplaceContext.Provider
       value={{
@@ -320,6 +377,10 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
         approveMilestone,
         requestMilestoneRevision,
         updateSubtaskStatus,
+        createPayPalEscrowOrder,
+        authorizePayPalEscrow,
+        releaseMilestoneOverride,
+        releaseContractUpfront,
         refreshMarketplace: fetchAllData,
         isLoading,
       }}

@@ -24,10 +24,64 @@ import {
 } from "lucide-react";
 
 export default function HomePage() {
-  const { activeRole, setActiveRole, toggleRole, isHydrated } = useAuth();
+  const { activeRole, currentUser, isAuthenticated, isHydrated } = useAuth();
   const { activeContract } = useMarketplace();
 
-  const escrowStatusInfo = getEscrowStatusInfo(activeContract.escrowStatus);
+  const canBrowseFreelancer = isAuthenticated && currentUser.role === "FREELANCER";
+  const canBrowseClient = isAuthenticated && currentUser.role === "CLIENT";
+
+  const previewContract =
+    isAuthenticated && activeContract && activeContract.id
+      ? activeContract
+      : {
+          id: "SAMPLE-ESCROW-DEMO",
+          projectTitle: "Sample Milestone Escrow Architecture (Preview)",
+          totalBudget: 3000,
+          releasedAmount: 900,
+          currency: "USD",
+          escrowStatus: "PARTIALLY_RELEASED" as const,
+          milestones: [
+            {
+              id: "sample-1",
+              stepNumber: 1,
+              title: "Architecture & Spec Lock",
+              description: "System schema, PayPal Orders v2 authorization & milestone sign-off.",
+              paymentAmount: 900,
+              currency: "USD",
+              deadline: "2026-12-01T00:00:00Z",
+              status: "RELEASED" as const,
+              submission: undefined,
+            },
+            {
+              id: "sample-2",
+              stepNumber: 2,
+              title: "Core Implementation & AI Audit",
+              description: "Deliverable submitted for security scan and requirement verification.",
+              paymentAmount: 1200,
+              currency: "USD",
+              deadline: "2026-12-10T00:00:00Z",
+              status: "ACTIVE" as const,
+              submission: undefined,
+            },
+            {
+              id: "sample-3",
+              stepNumber: 3,
+              title: "Final Release & Settlement",
+              description: "Final milestone captured via PayPal and reputation scorecard updated.",
+              paymentAmount: 900,
+              currency: "USD",
+              deadline: "2026-12-20T00:00:00Z",
+              status: "LOCKED" as const,
+              submission: undefined,
+            },
+          ],
+        };
+
+  const escrowStatusInfo = getEscrowStatusInfo(previewContract.escrowStatus);
+  const progressPct =
+    previewContract.totalBudget > 0
+      ? Math.round((previewContract.releasedAmount / previewContract.totalBudget) * 100)
+      : 0;
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -58,24 +112,22 @@ export default function HomePage() {
           {/* Dual CTAs */}
           <div className="flex flex-col sm:flex-row gap-4 mb-14 w-full sm:w-auto">
             <Link
-              href="/freelancer/dashboard"
-              onClick={() => setActiveRole("FREELANCER")}
+              href={isAuthenticated ? "/freelancer/dashboard" : "/auth/login"}
               id="hero-cta-find"
               className="btn-shadow bg-[#0070E0] hover:bg-[#003087] text-white px-8 sm:px-10 py-4 rounded-full text-base sm:text-lg font-bold flex items-center justify-center gap-2 transition-all group cursor-pointer"
             >
               <Search className="w-5 h-5" />
-              <span>Find Work</span>
+              <span>{canBrowseFreelancer ? "Open Freelancer Workspace" : "Find Work"}</span>
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
 
             <Link
-              href="/client/dashboard"
-              onClick={() => setActiveRole("CLIENT")}
+              href={isAuthenticated ? "/client/dashboard" : "/auth/login"}
               id="hero-cta-hire"
               className="bg-white border-2 border-gray-200 hover:border-[#0070E0] hover:text-[#0070E0] text-gray-700 px-8 sm:px-10 py-4 rounded-full text-base sm:text-lg font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
             >
               <PlusCircle className="w-5 h-5 text-[#0070E0]" />
-              <span>Hire Talent</span>
+              <span>{canBrowseClient ? "Open Client Dashboard" : "Hire Talent"}</span>
             </Link>
           </div>
 
@@ -100,10 +152,10 @@ export default function HomePage() {
             {/* Freelancer Portal Card */}
             <div
               className={`group relative p-8 sm:p-10 rounded-3xl border bg-gray-50/50 card-hover transition-all ${
-                isHydrated && activeRole === "FREELANCER" ? "border-[#0070E0] ring-2 ring-[#0070E0]/20 bg-blue-50/10" : "border-gray-100"
+                isHydrated && isAuthenticated && activeRole === "FREELANCER" ? "border-[#0070E0] ring-2 ring-[#0070E0]/20 bg-blue-50/10" : "border-gray-100"
               }`}
             >
-              {isHydrated && activeRole === "FREELANCER" && (
+              {isHydrated && isAuthenticated && activeRole === "FREELANCER" && (
                 <div className="absolute top-6 right-8">
                   <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
                     Active
@@ -135,20 +187,18 @@ export default function HomePage() {
               </ul>
               <div className="flex flex-wrap gap-3">
                 <Link
-                  href="/freelancer/dashboard?tab=browse"
-                  onClick={() => setActiveRole("FREELANCER")}
+                  href={isAuthenticated ? "/freelancer/dashboard?tab=projects" : "/auth/login"}
                   id="portal-browse-projects"
                   className="bg-[#0070E0] hover:bg-[#005bb8] text-white px-6 py-2.5 rounded-full text-sm font-bold transition-colors"
                 >
                   Browse Projects
                 </Link>
                 <Link
-                  href="/freelancer/dashboard?tab=profile"
-                  onClick={() => setActiveRole("FREELANCER")}
+                  href={isAuthenticated ? "/freelancer/dashboard?tab=profile" : "/auth/signup"}
                   id="portal-view-profile"
                   className="bg-white border border-gray-200 hover:border-gray-300 text-gray-700 px-6 py-2.5 rounded-full text-sm font-bold transition-colors"
                 >
-                  View Profile
+                  {isAuthenticated ? "View Profile" : "Join as Talent"}
                 </Link>
               </div>
             </div>
@@ -156,10 +206,10 @@ export default function HomePage() {
             {/* Client Portal Card */}
             <div
               className={`group relative p-8 sm:p-10 rounded-3xl border bg-gray-50/50 card-hover transition-all ${
-                isHydrated && activeRole === "CLIENT" ? "border-[#003087] ring-2 ring-[#003087]/20 bg-blue-50/10" : "border-gray-100"
+                isHydrated && isAuthenticated && activeRole === "CLIENT" ? "border-[#003087] ring-2 ring-[#003087]/20 bg-blue-50/10" : "border-gray-100"
               }`}
             >
-              {isHydrated && activeRole === "CLIENT" && (
+              {isHydrated && isAuthenticated && activeRole === "CLIENT" && (
                 <div className="absolute top-6 right-8">
                   <span className="px-3 py-1 rounded-full bg-blue-100 text-[#003087] text-[10px] font-bold uppercase tracking-wider">
                     Active
@@ -191,20 +241,18 @@ export default function HomePage() {
               </ul>
               <div className="flex flex-wrap gap-3">
                 <Link
-                  href="/client/dashboard?tab=post"
-                  onClick={() => setActiveRole("CLIENT")}
+                  href={isAuthenticated ? "/client/dashboard?tab=post" : "/auth/login"}
                   id="portal-post-project"
                   className="bg-[#003087] hover:bg-[#00205c] text-white px-6 py-2.5 rounded-full text-sm font-bold transition-colors"
                 >
                   Post a Project
                 </Link>
                 <Link
-                  href="/client/dashboard?tab=applications"
-                  onClick={() => setActiveRole("CLIENT")}
+                  href={isAuthenticated ? "/client/dashboard?tab=proposals" : "/auth/signup"}
                   id="portal-review-inbox"
                   className="bg-white border border-gray-200 hover:border-gray-300 text-gray-700 px-6 py-2.5 rounded-full text-sm font-bold transition-colors"
                 >
-                  Review Inbox
+                  {isAuthenticated ? "Review Inbox" : "Join as Client"}
                 </Link>
               </div>
             </div>
@@ -393,17 +441,19 @@ export default function HomePage() {
           <div className="bg-white rounded-3xl border border-gray-200 p-8 sm:p-10 shadow-lg">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-8 border-b border-gray-100 gap-4">
               <div>
-                <span className="text-xs uppercase tracking-widest font-bold text-gray-400">Current Project In Escrow</span>
-                <h3 className="text-2xl font-bold text-[#003087] mt-1">{activeContract.projectTitle}</h3>
+                <span className="text-xs uppercase tracking-widest font-bold text-gray-400">
+                  {isAuthenticated && activeContract?.id ? "Current Project In Escrow" : "Sample Escrow Workflow"}
+                </span>
+                <h3 className="text-2xl font-bold text-[#003087] mt-1">{previewContract.projectTitle}</h3>
                 <p className="text-xs text-gray-500 mt-1">
-                  Contract ID: <span className="font-mono text-gray-700">{activeContract.id}</span>
+                  Contract ID: <span className="font-mono text-gray-700">{previewContract.id}</span>
                 </p>
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-right">
                   <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider block">Total Escrow Vault</span>
                   <span className="text-2xl font-extrabold text-[#003087]">
-                    {formatCurrency(activeContract.totalBudget, activeContract.currency)}
+                    {formatCurrency(previewContract.totalBudget, previewContract.currency)}
                   </span>
                 </div>
               </div>
@@ -414,15 +464,15 @@ export default function HomePage() {
               <div className="flex items-center justify-between text-xs font-bold text-gray-500 mb-2">
                 <span>Fund Settlement Progress</span>
                 <span className="text-[#0070E0]">
-                  {formatCurrency(activeContract.releasedAmount, activeContract.currency)} of{" "}
-                  {formatCurrency(activeContract.totalBudget, activeContract.currency)} Released
+                  {formatCurrency(previewContract.releasedAmount, previewContract.currency)} of{" "}
+                  {formatCurrency(previewContract.totalBudget, previewContract.currency)} Released
                 </span>
               </div>
               <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-[#0070E0] to-emerald-500 rounded-full transition-all duration-500"
                   style={{
-                    width: `${Math.round((activeContract.releasedAmount / activeContract.totalBudget) * 100)}%`,
+                    width: `${progressPct}%`,
                   }}
                 />
               </div>
@@ -434,7 +484,7 @@ export default function HomePage() {
                 Milestone Execution Steps
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {activeContract.milestones.map((ms) => {
+                {previewContract.milestones.map((ms) => {
                   const statusInfo = getMilestoneStatusInfo(ms.status);
                   return (
                     <div

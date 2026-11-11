@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useMarketplace } from "@/context/MarketplaceContext";
+import { RequireAuth } from "@/components/auth/RequireAuth";
+import { ContractChatPanel } from "@/components/contracts/ContractChatPanel";
+import { apiClient } from "@/services/api";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -55,7 +58,7 @@ function FreelancerDashboardContent() {
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as FreelancerTab) || "overview";
 
-  const { currentUser, activeRole, setActiveRole, updateProfile, isHydrated } = useAuth();
+  const { currentUser, activeRole, setActiveRole, updateProfile, refreshUser, isHydrated } = useAuth();
   const {
     projects,
     applications,
@@ -74,8 +77,18 @@ function FreelancerDashboardContent() {
     (c) => c.freelancerId === currentUser.id || c.freelancerName === currentUser.name
   );
   const [selectedContractId, setSelectedContractId] = useState<string>("");
+  const [contractSearch, setContractSearch] = useState<string>("");
   const selectedContractForTab =
     myContracts.find((c) => c.id === selectedContractId) ?? myContracts[0] ?? activeContract;
+  const filteredMyContracts = myContracts.filter((c) => {
+    const q = contractSearch.trim().toLowerCase();
+    return (
+      !q ||
+      c.projectTitle.toLowerCase().includes(q) ||
+      c.clientName.toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q)
+    );
+  });
   const [activeTab, setActiveTab] = useState<FreelancerTab>(initialTab);
 
   // Sync tab if URL param changes
@@ -125,6 +138,49 @@ function FreelancerDashboardContent() {
   const [editSkills, setEditSkills] = useState(currentUser.skills?.join(", ") || "");
   const [editPortfolio, setEditPortfolio] = useState(currentUser.portfolioLinks?.[0] || "");
   const [profileSuccessMsg, setProfileSuccessMsg] = useState("");
+
+  // PayPal Payout Email & Live Payout Ledger State
+  const [paypalPayoutInput, setPaypalPayoutInput] = useState(
+    currentUser.paypalPayoutEmail || currentUser.email || ""
+  );
+  const [isSavingPayoutEmail, setIsSavingPayoutEmail] = useState(false);
+  const [payoutEmailMsg, setPayoutEmailMsg] = useState("");
+  const [payoutEmailErr, setPayoutEmailErr] = useState("");
+  const [freelancerPaypalTxs, setFreelancerPaypalTxs] = useState<any[]>([]);
+
+  useEffect(() => {
+    setPaypalPayoutInput(currentUser.paypalPayoutEmail || currentUser.email || "");
+  }, [currentUser.paypalPayoutEmail, currentUser.email]);
+
+  useEffect(() => {
+    const cid = selectedContractForTab?.id;
+    if (!cid || activeTab !== "contracts") {
+      setFreelancerPaypalTxs([]);
+      return;
+    }
+    apiClient
+      .getPayPalTransactions(cid)
+      .then((txs) => setFreelancerPaypalTxs(Array.isArray(txs) ? txs : []))
+      .catch(() => setFreelancerPaypalTxs([]));
+  }, [selectedContractForTab?.id, selectedContractForTab?.releasedAmount, activeTab]);
+
+  const handleSavePayoutEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSavingPayoutEmail) return;
+    setIsSavingPayoutEmail(true);
+    setPayoutEmailErr("");
+    setPayoutEmailMsg("");
+    try {
+      await apiClient.updateProfile({ paypalPayoutEmail: paypalPayoutInput.trim() });
+      await refreshUser();
+      setPayoutEmailMsg("PayPal payout email saved! Future milestone releases will go here.");
+      setTimeout(() => setPayoutEmailMsg(""), 4000);
+    } catch (err: any) {
+      setPayoutEmailErr(err?.message || "Please enter a valid email address.");
+    } finally {
+      setIsSavingPayoutEmail(false);
+    }
+  };
 
   const isUnrated = currentUser.isNewMember || currentUser.trustScorecard.completedProjects === 0;
   const escrowStatusInfo = getEscrowStatusInfo(selectedContractForTab.escrowStatus);
@@ -639,7 +695,7 @@ function FreelancerDashboardContent() {
                     <span className="text-emerald-600 font-semibold">
                       {formatCurrency(selectedContractForTab.releasedAmount, selectedContractForTab.currency)}
                     </span>{" "}
-                    / Total: {formatCurrency(activeContract.totalBudget, activeContract.currency)}
+                    / Total: {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
                   </p>
                 </div>
                 <Button variant="primary" size="sm" onClick={() => setActiveTab("contracts")}>
@@ -1185,25 +1241,35 @@ function FreelancerDashboardContent() {
             </Badge>
           </div>
 
-          {/* Multi-contract selector for freelancer */}
-          {myContracts.length > 1 && (
-            <Card className="border-slate-200 bg-white p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <span className="text-xs font-bold text-slate-700 shrink-0">Select Escrow Contract:</span>
-                <select
-                  value={selectedContractId || selectedContractForTab.id}
-                  onChange={(e) => setSelectedContractId(e.target.value)}
-                  className="flex-1 h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-paypal-blue"
-                >
-                  {myContracts.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.projectTitle} — Client: {c.clientName} ({c.id})
-                    </option>
-                  ))}
-                </select>
+          {/* Simple 1-Step PayPal Payout Setup (No Bank Details Needed) */}
+          <Card className="border-blue-100 bg-blue-50/40">
+            <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-0.5 text-xs">
+                <p className="font-bold text-[#003087] flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-[#0070E0]" />
+                  PayPal Payout Email (No Bank Details Needed)
+                </p>
+                <p className="text-slate-600">
+                  Approved milestone payments are sent via PayPal to this email — PayPal handles withdrawing funds to your linked bank account.
+                </p>
+                {payoutEmailMsg && <p className="text-emerald-700 font-semibold pt-1">{payoutEmailMsg}</p>}
+                {payoutEmailErr && <p className="text-rose-700 font-semibold pt-1">{payoutEmailErr}</p>}
               </div>
-            </Card>
-          )}
+              <form onSubmit={handleSavePayoutEmail} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+                <input
+                  type="email"
+                  required
+                  value={paypalPayoutInput}
+                  onChange={(e) => setPaypalPayoutInput(e.target.value)}
+                  placeholder="your-paypal@example.com"
+                  className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 min-w-[240px] focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                />
+                <Button type="submit" variant="primary" size="sm" disabled={isSavingPayoutEmail}>
+                  {isSavingPayoutEmail ? "Saving..." : "Save PayPal Email"}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
 
           {myContracts.length === 0 && (
             <div className="p-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
@@ -1219,6 +1285,61 @@ function FreelancerDashboardContent() {
           )}
 
           {myContracts.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Sidebar: Clickable Contract Cards */}
+            <div className="lg:col-span-4 space-y-3">
+              <Card className="border-slate-200 bg-white p-3.5 rounded-2xl space-y-2.5 shadow-xs">
+                <span className="text-xs font-extrabold text-[#003087] uppercase tracking-wider block">
+                  Your Contracts ({filteredMyContracts.length}/{myContracts.length})
+                </span>
+                <input
+                  type="text"
+                  value={contractSearch}
+                  onChange={(e) => setContractSearch(e.target.value)}
+                  placeholder="Search project, client, or ID..."
+                  className="w-full h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-paypal-blue"
+                />
+              </Card>
+
+              <div className="space-y-2.5 max-h-[680px] overflow-y-auto pr-1">
+                {filteredMyContracts.map((c) => {
+                  const isSelected = c.id === selectedContractForTab.id;
+                  const cInfo = getEscrowStatusInfo(c.escrowStatus);
+                  const pct = c.totalBudget > 0 ? Math.round((c.releasedAmount / c.totalBudget) * 100) : 0;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSelectedContractId(c.id)}
+                      className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                        isSelected
+                          ? "border-paypal-blue bg-blue-50/40 ring-2 ring-paypal-blue/20 shadow-sm"
+                          : "border-slate-200 bg-white hover:border-blue-200"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <h4 className="font-bold text-xs text-slate-900 line-clamp-1">{c.projectTitle}</h4>
+                        <span className="font-extrabold text-xs text-paypal-dark shrink-0">
+                          {formatCurrency(c.totalBudget, c.currency)}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mb-2 truncate">
+                        Client: <strong className="text-slate-700">{c.clientName}</strong> • #{c.id}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                        <Badge variant={cInfo.variant} size="sm">{cInfo.label}</Badge>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-paypal-blue rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Right Panel: Selected Contract Workspace */}
+            <div className="lg:col-span-8">
           <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1247,6 +1368,15 @@ function FreelancerDashboardContent() {
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
+              {selectedContractForTab.escrowStatus === "AWAITING_AUTHORIZATION" && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center gap-2.5">
+                  <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    <strong>Awaiting Client PayPal Escrow Funding:</strong> Once {selectedContractForTab.clientName} authorizes the escrow amount via PayPal, Milestone Step 1 will unlock for submission.
+                  </span>
+                </div>
+              )}
+
               {/* Financial Balances */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
                 <div>
@@ -1264,7 +1394,69 @@ function FreelancerDashboardContent() {
                 <div>
                   <span className="text-xs text-slate-500 block">Settlement Rate</span>
                   <span className="text-lg font-bold text-paypal-blue">
-                    {Math.round((selectedContractForTab.releasedAmount / selectedContractForTab.totalBudget) * 100)}%
+                    {selectedContractForTab.totalBudget > 0
+                      ? Math.round((selectedContractForTab.releasedAmount / selectedContractForTab.totalBudget) * 100)
+                      : 0}
+                    %
+                  </span>
+                </div>
+              </div>
+
+              {/* Complete Project Brief, Client Info & Deadlines */}
+              <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-100 space-y-3 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-[#003087] uppercase tracking-wider text-[11px]">
+                      Complete Project Brief &amp; Deadlines
+                    </span>
+                    {selectedContractForTab.projectDomain && (
+                      <Badge variant="paypal" size="sm">{selectedContractForTab.projectDomain}</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px]">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-[#0070E0]" />
+                      Project Deadline:{" "}
+                      <strong>
+                        {selectedContractForTab.projectDeadline
+                          ? formatDate(selectedContractForTab.projectDeadline)
+                          : "Flexible"}
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-slate-700 leading-relaxed whitespace-pre-line">
+                  {selectedContractForTab.projectDescription || "No extended project description provided."}
+                </p>
+
+                {selectedContractForTab.requiredSkills && selectedContractForTab.requiredSkills.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedContractForTab.requiredSkills.map((skill) => (
+                      <span
+                        key={skill}
+                        className="px-2.5 py-0.5 rounded-full bg-white border border-blue-200 text-slate-700 text-[11px] font-medium"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-blue-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-600">
+                  <span>
+                    Client Contact: <strong className="text-slate-900">{selectedContractForTab.clientName}</strong>
+                    {selectedContractForTab.clientEmail ? ` (${selectedContractForTab.clientEmail})` : ""}
+                  </span>
+                  <span>
+                    PayPal Payout To:{" "}
+                    <strong className="font-mono text-[#003087]">
+                      {selectedContractForTab.freelancerPayoutEmail || currentUser.paypalPayoutEmail || currentUser.email}
+                    </strong>
+                  </span>
+                  <span className="font-semibold text-[#003087]">
+                    Progress: {selectedContractForTab.milestones.filter((m) => m.status === "RELEASED").length} /{" "}
+                    {selectedContractForTab.milestones.length} Milestones Completed
                   </span>
                 </div>
               </div>
@@ -1397,23 +1589,65 @@ function FreelancerDashboardContent() {
 
                         {/* Submission / Verification Preview */}
                         {ms.submission && (
-                          <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs space-y-2 mb-3">
+                          <div className="p-3.5 bg-white rounded-xl border border-slate-200 text-xs space-y-2 mb-3">
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold text-slate-700">Submitted Deliverable:</span>
+                              <span className="font-semibold text-slate-700">
+                                Latest Submitted Deliverable (Attempt #{ms.submission.revisionNumber || 1}):
+                              </span>
                               <span className="text-slate-400 text-[11px]">{formatDate(ms.submission.submittedAt)}</span>
                             </div>
-                            <p className="text-paypal-blue font-mono text-[11px] break-all">{ms.submission.submissionUrl}</p>
-                            {ms.submission.notes && <p className="text-slate-500 text-[11px]">{ms.submission.notes}</p>}
+                            <a
+                              href={ms.submission.submissionUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-paypal-blue font-mono text-[11px] break-all inline-flex items-center gap-1 hover:underline"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              {ms.submission.submissionUrl}
+                            </a>
+                            {ms.submission.notes && (
+                              <p className="text-slate-600 text-[11px] bg-slate-50 p-2 rounded">
+                                Notes: {ms.submission.notes}
+                              </p>
+                            )}
 
                             {ms.submission.aiVerificationReport && (
-                              <div className="mt-2 p-2 bg-purple-50 rounded border border-purple-200 text-[11px] text-purple-900">
-                                <span className="font-bold">
-                                  AI Advisory Inspection: {ms.submission.aiVerificationReport.overallScore}% (Grade{" "}
-                                  {ms.submission.aiVerificationReport.qualityGrade})
-                                </span>
-                                <span className="block text-[10px] text-purple-600 mt-0.5">
-                                  Advisory check completed. Final release requires client approval.
-                                </span>
+                              <div className="mt-2 p-2.5 bg-purple-50 rounded-lg border border-purple-200 text-[11px] text-purple-900 space-y-1">
+                                <div className="flex items-center justify-between font-bold">
+                                  <span>
+                                    AI Advisory Inspection: {ms.submission.aiVerificationReport.overallScore}% (Grade{" "}
+                                    {ms.submission.aiVerificationReport.qualityGrade})
+                                  </span>
+                                  <span className="text-[10px] text-purple-600 font-normal">Advisory Only</span>
+                                </div>
+                                {ms.submission.aiVerificationReport.feedbackNotes && (
+                                  <p className="text-[11px] text-purple-800">{ms.submission.aiVerificationReport.feedbackNotes}</p>
+                                )}
+                              </div>
+                            )}
+
+                            {ms.submissionHistory && ms.submissionHistory.length > 1 && (
+                              <div className="pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleHistory(ms.id)}
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-paypal-blue cursor-pointer"
+                                >
+                                  <History className="w-3 h-3" />
+                                  {isHistoryExpanded(ms.id)
+                                    ? "Hide previous submissions"
+                                    : `View submission history (${ms.submissionHistory.length})`}
+                                </button>
+                                {isHistoryExpanded(ms.id) && (
+                                  <div className="mt-2 space-y-1.5 pl-2 border-l-2 border-slate-200">
+                                    {ms.submissionHistory.map((h) => (
+                                      <div key={h.id} className="text-[11px] text-slate-600">
+                                        <span className="font-semibold">#{h.revisionNumber || 1}</span> ({formatDate(h.submittedAt)}):{" "}
+                                        <span className="font-mono break-all">{h.submissionUrl}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1424,7 +1658,14 @@ function FreelancerDashboardContent() {
                             <span className="font-bold text-slate-800">
                               {formatCurrency(ms.paymentAmount, ms.currency)} ({ms.percentage}%)
                             </span>
-                            <span className="text-slate-400 ml-2">Deadline: {formatDate(ms.deadline)}</span>
+                            <span className="text-slate-500 ml-2">
+                              Deadline:{" "}
+                              <strong>
+                                {ms.deadline || selectedContractForTab.projectDeadline
+                                  ? formatDate(ms.deadline || selectedContractForTab.projectDeadline!)
+                                  : "Flexible"}
+                              </strong>
+                            </span>
                           </div>
 
                           {/* Submit Deliverable Button if Active or Revision Requested */}
@@ -1451,8 +1692,57 @@ function FreelancerDashboardContent() {
                   })}
                 </div>
               </div>
+
+              {/* Live PayPal Payout Receipts */}
+              {freelancerPaypalTxs.some((tx) => tx.operation === "PAYOUT" || tx.operation === "CAPTURE_MILESTONE") && (
+                <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-200 space-y-2">
+                  <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider">
+                    PayPal Payout Receipts
+                  </h4>
+                  <div className="space-y-1.5">
+                    {freelancerPaypalTxs
+                      .filter((tx) => tx.operation === "PAYOUT" || tx.operation === "CAPTURE_MILESTONE")
+                      .map((tx) => (
+                        <div
+                          key={tx.id}
+                          className="flex flex-wrap items-center justify-between gap-2 text-[11px] bg-white px-3 py-2 rounded-lg border border-emerald-100"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
+                                tx.status === "COMPLETED"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-amber-100 text-amber-800"
+                              }`}
+                            >
+                              {tx.status}
+                            </span>
+                            <span className="font-mono text-slate-700">
+                              {tx.paypalPayoutBatchId || tx.paypalCaptureId || tx.operation}
+                            </span>
+                            {tx.errorMessage && (
+                              <span className="text-amber-700">({tx.errorMessage})</span>
+                            )}
+                          </div>
+                          <strong className="text-emerald-700">
+                            {formatCurrency(tx.amount, tx.currency)}
+                          </strong>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Direct Project Discussion with Client */}
+              <ContractChatPanel
+                contractId={selectedContractForTab.id}
+                counterpartyName={selectedContractForTab.clientName}
+                counterpartyRoleLabel="Client"
+              />
             </CardContent>
           </Card>
+            </div>
+          </div>
           )}
         </div>
       )}
@@ -2121,7 +2411,7 @@ function FreelancerDashboardContent() {
                             {formatCurrency(ms.paymentAmount, ms.currency)}
                           </span>
                           <span className="text-[10px] text-slate-400 block">
-                            {ms.percentage}% of total
+                            {ms.percentage}% • Due {ms.deadline || selectedProjectForDetails.deadline ? formatDate(ms.deadline || selectedProjectForDetails.deadline) : "Flexible"}
                           </span>
                         </div>
                       </div>
@@ -2184,8 +2474,10 @@ function FreelancerDashboardContent() {
 
 export default function FreelancerDashboardPage() {
   return (
-    <Suspense fallback={<div className="p-12 text-center text-xs text-slate-400">Loading Freelancer Dashboard...</div>}>
-      <FreelancerDashboardContent />
-    </Suspense>
+    <RequireAuth requiredRole="FREELANCER">
+      <Suspense fallback={<div className="p-12 text-center text-xs text-slate-400">Loading Freelancer Dashboard...</div>}>
+        <FreelancerDashboardContent />
+      </Suspense>
+    </RequireAuth>
   );
 }

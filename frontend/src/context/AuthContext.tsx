@@ -68,6 +68,7 @@ function normalizeUserProfile(raw: any): UserProfile {
     id: String(raw.id || ""),
     name: raw.name || "",
     email: raw.email || "",
+    paypalPayoutEmail: raw.paypalPayoutEmail || raw.paypal_payout_email || "",
     role: (raw.role === "CLIENT" ? "CLIENT" : "FREELANCER") as UserRole,
     domain: raw.domain || "General",
     bio: raw.bio || "",
@@ -121,12 +122,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setActiveRoleState(normalized.role);
           setIsAuthenticated(true);
         }
-      } catch (err) {
-        // Token expired or invalid: clear and reset
-        clearStoredToken();
-        if (isMounted) {
-          setCurrentUser(EMPTY_USER);
-          setIsAuthenticated(false);
+      } catch (err: any) {
+        // Only clear stored token when backend explicitly rejects it (401/403)
+        if (err?.status === 401 || err?.status === 403) {
+          clearStoredToken();
+          if (isMounted) {
+            setCurrentUser(EMPTY_USER);
+            setIsAuthenticated(false);
+          }
         }
       } finally {
         if (isMounted) {

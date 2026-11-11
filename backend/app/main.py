@@ -10,7 +10,17 @@ Configures:
 
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load backend/.env for local/sandbox runs while keeping pytest deterministic
+if "pytest" not in sys.modules:
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    if _env_path.exists():
+        load_dotenv(dotenv_path=_env_path, override=False)
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,13 +35,14 @@ from app.api.application_routes import (
 )
 from app.api.user_routes import router as user_router
 from app.api.auth_routes import router as auth_router
+from app.api.paypal_routes import router as paypal_router
 from app.database import engine, Base
 from app.core.security import validate_jwt_configuration, is_production_environment
 
 logger = logging.getLogger("trustpay.main")
 
 # Import all models so Base.metadata knows about every table before create_all() runs.
-from app.models import User, Project, Application, Contract, Milestone, Submission  # noqa: F401
+from app.models import User, Project, Application, Contract, Milestone, Submission, PayPalTransaction, ContractMessage  # noqa: F401
 
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -48,7 +59,7 @@ ALLOWED_ORIGINS: list = [o.strip() for o in _raw_origins.split(",") if o.strip()
 # ─── CSRF exempt paths ────────────────────────────────────────────────────────
 # Login, register, and logout don't require an existing session cookie.
 _CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-_CSRF_EXEMPT_PATHS = {"/api/auth/register", "/api/auth/login", "/api/auth/logout"}
+_CSRF_EXEMPT_PATHS = {"/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/paypal/webhook"}
 
 
 @asynccontextmanager
@@ -63,6 +74,14 @@ async def lifespan(app: FastAPI):
     validate_jwt_configuration()
 
     Base.metadata.create_all(bind=engine)
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()}
+            if "paypal_payout_email" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN paypal_payout_email VARCHAR(255)"))
+    except Exception as mig_err:
+        logger.warning(f"Non-blocking SQLite column check: {mig_err}")
 
     if os.getenv("SEED_DEMO_DATA", "false").strip().lower() == "true":
         if is_production_environment():
@@ -147,6 +166,7 @@ app.include_router(application_router)
 app.include_router(applications_direct_router)
 app.include_router(user_router)
 app.include_router(auth_router)
+app.include_router(paypal_router)
 
 
 @app.get("/")

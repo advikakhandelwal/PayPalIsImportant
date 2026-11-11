@@ -12,7 +12,7 @@ import { ShieldCheck, User, Building, ArrowRight, AlertCircle } from "lucide-rea
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, currentUser, isAuthenticated, isHydrated, logout } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -94,6 +94,26 @@ export default function LoginPage() {
             Access your milestone escrow contracts and active dashboard.
           </p>
         </div>
+
+        {/* Already Signed-In Session Banner */}
+        {isHydrated && isAuthenticated && (
+          <Card className="p-4 border-emerald-200 bg-emerald-50/70 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="text-xs text-emerald-900">
+              <p className="font-bold">Already signed in as {currentUser.name}</p>
+              <p className="text-[11px] text-emerald-700">Role: {currentUser.role}</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link href={currentUser.role === "FREELANCER" ? "/freelancer/dashboard" : "/client/dashboard"}>
+                <Button variant="primary" size="sm">
+                  Go to Dashboard
+                </Button>
+              </Link>
+              <Button variant="ghost" size="sm" onClick={logout}>
+                Sign Out
+              </Button>
+            </div>
+          </Card>
+        )}
 
         {/* Card Form */}
         <Card className="border-gray-200/80 rounded-3xl shadow-xl overflow-hidden bg-white">

@@ -12,6 +12,7 @@ import {
   UserProfile,
   UserRole,
   TrustScorecardData,
+  ContractMessage,
 } from "@/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
@@ -195,6 +196,15 @@ export const apiClient = {
     return handleResponse<UserProfile>(res);
   },
 
+  async verifyPassword(password: string): Promise<{ verified: boolean; userId: string }> {
+    const res = await fetch(`${API_BASE_URL}/auth/verify-password`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ password }),
+    });
+    return handleResponse<{ verified: boolean; userId: string }>(res);
+  },
+
   // ── Project Marketplace Endpoints ─────────────────────────────────────────
   async getProjects(): Promise<Project[]> {
     const res = await fetch(`${API_BASE_URL}/projects`, {
@@ -353,5 +363,164 @@ export const apiClient = {
       body: JSON.stringify(payload),
     });
     return handleResponse<any>(res);
+  },
+
+  // ── PayPal Escrow & Payout Endpoints ──────────────────────────────────────
+  async getPayPalConfig(): Promise<{
+    mode: string;
+    intent?: string;
+    configured: boolean;
+    hasLiveCredentials: boolean;
+    clientId?: string | null;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/paypal/config`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse(res);
+  },
+
+  async createPayPalEscrowOrder(
+    contractId: string,
+    payload: { returnUrl?: string; cancelUrl?: string; idempotencyKey?: string } = {}
+  ): Promise<{
+    contractId: string;
+    orderId: string;
+    status: string;
+    approvalUrl?: string | null;
+    amount: number;
+    currency: string;
+    idempotencyKey: string;
+    mode: string;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/paypal/contracts/${contractId}/create-order`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(res);
+  },
+
+  async authorizePayPalEscrow(
+    contractId: string,
+    payload: { orderId?: string; authorizationId?: string; idempotencyKey?: string; simulate?: boolean }
+  ): Promise<{
+    contractId: string;
+    orderId?: string | null;
+    authorizationId: string;
+    status: string;
+    escrowStatus: string;
+    heldInEscrowAmount: number;
+    currency: string;
+    activeMilestoneId?: string | null;
+    idempotencyKey: string;
+    mode: string;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/paypal/contracts/${contractId}/authorize`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(res);
+  },
+
+  async capturePayPalMilestone(
+    contractId: string,
+    milestoneId: string,
+    payload: { noteToPayer?: string; idempotencyKey?: string } = {}
+  ): Promise<any> {
+    const res = await fetch(
+      `${API_BASE_URL}/paypal/contracts/${contractId}/milestones/${milestoneId}/capture`,
+      {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify(payload),
+      }
+    );
+    return handleResponse(res);
+  },
+
+  async payoutPayPalMilestone(
+    contractId: string,
+    milestoneId: string,
+    payload: { recipientEmail?: string; note?: string; idempotencyKey?: string } = {}
+  ): Promise<any> {
+    const res = await fetch(
+      `${API_BASE_URL}/paypal/contracts/${contractId}/milestones/${milestoneId}/payout`,
+      {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify(payload),
+      }
+    );
+    return handleResponse(res);
+  },
+
+  async refundPayPalEscrow(
+    contractId: string,
+    payload: { captureId?: string; amount?: number; reason?: string; voidRemainingAuthorization?: boolean } = {}
+  ): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/paypal/contracts/${contractId}/refund`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(res);
+  },
+
+  async getPayPalTransactions(contractId: string): Promise<any[]> {
+    const res = await fetch(`${API_BASE_URL}/paypal/contracts/${contractId}/transactions`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse(res);
+  },
+
+  // ── Upfront / Override Release & Direct Contract Chat ─────────────────────
+  async releaseMilestoneOverride(
+    contractId: string,
+    milestoneId: string,
+    password: string,
+    reason?: string
+  ): Promise<EscrowContract> {
+    const res = await fetch(
+      `${API_BASE_URL}/contracts/${contractId}/milestones/${milestoneId}/release-override`,
+      {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({ password, reason }),
+      }
+    );
+    return handleResponse<EscrowContract>(res);
+  },
+
+  async releaseContractUpfront(
+    contractId: string,
+    password: string,
+    reason?: string
+  ): Promise<EscrowContract> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/release-upfront`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ password, reason }),
+    });
+    return handleResponse<EscrowContract>(res);
+  },
+
+  async getContractMessages(contractId: string): Promise<ContractMessage[]> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/messages`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<ContractMessage[]>(res);
+  },
+
+  async sendContractMessage(contractId: string, message: string): Promise<ContractMessage> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/messages`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ message }),
+    });
+    return handleResponse<ContractMessage>(res);
   },
 };

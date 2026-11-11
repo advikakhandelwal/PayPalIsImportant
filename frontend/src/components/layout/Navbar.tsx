@@ -194,7 +194,7 @@ export const Navbar: React.FC = () => {
 
           {/* Right Controls: Back to Dashboard, Account Switcher, Auth */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {isHydrated ? (
+            {isHydrated && isAuthenticated ? (
               <>
                 {/* 1. Back to Dashboard Button (Hidden on Landing Page) */}
                 {!isLandingPage && (

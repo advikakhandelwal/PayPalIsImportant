@@ -28,6 +28,7 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
+  paypalPayoutEmail?: string | null;
   role: UserRole;
   domain: string; // e.g. "Full-Stack Development", "AI Engineering", "Video Production"
   bio: string;
@@ -239,18 +240,40 @@ export interface EscrowContract {
   id: string;
   projectId: string;
   projectTitle: string;
+  projectDescription?: string;
+  projectDomain?: string;
+  projectDeadline?: string;
+  requiredSkills?: string[];
   clientId: string;
   clientName: string;
+  clientEmail?: string;
   freelancerId: string;
   freelancerName: string;
+  freelancerEmail?: string;
+  freelancerPayoutEmail?: string | null;
+  freelancerDomain?: string;
+  freelancerRating?: number;
+  freelancerBadges?: string[];
   totalBudget: number;
   heldInEscrowAmount: number;
   releasedAmount: number;
   currency: string;
   escrowStatus: EscrowStatus;
+  paypalAuthId?: string;
+  paypalCaptureId?: string;
   milestones: Milestone[];
   createdAt: string;
   dispute?: DisputeCase;
+}
+
+export interface ContractMessage {
+  id: string;
+  contractId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: string;
+  message: string;
+  createdAt: string;
 }
 
 export type DisputeStatus =
@@ -322,6 +345,7 @@ export interface DisputeCase {
   freelancerId: string;
   freelancerName: string;
   freelancerEmail?: string;
+  freelancerPayoutEmail?: string | null;
   initiatorRole: UserRole;
   initiatorName: string;
   reason: string;

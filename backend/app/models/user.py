@@ -26,6 +26,7 @@ class User(Base):
     domain = Column(String(120), nullable=True, default="General")
     bio = Column(Text, nullable=True)
     company_name = Column(String(120), nullable=True)
+    paypal_payout_email = Column(String(255), nullable=True)
 
     # Trust & Performance Scorecard Metrics
     trust_score = Column(Float, nullable=False, default=100.0)

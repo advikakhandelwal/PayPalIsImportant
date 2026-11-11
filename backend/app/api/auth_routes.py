@@ -71,6 +71,7 @@ def _format_user_auth_response(user: User, db: Optional[Session] = None) -> User
         domain=user.domain,
         bio=user.bio,
         company_name=user.company_name,
+        paypal_payout_email=getattr(user, "paypal_payout_email", None),
         created_at=user.created_at.isoformat() if user.created_at else datetime.utcnow().isoformat(),
         trust_scorecard=scorecard,
     )
@@ -212,7 +213,27 @@ def update_profile(
         current_user.bio = payload.bio.strip()
     if payload.company_name is not None:
         current_user.company_name = payload.company_name.strip()
+    if payload.paypal_payout_email is not None:
+        current_user.paypal_payout_email = payload.paypal_payout_email.strip().lower() or None
 
     db.commit()
     db.refresh(current_user)
     return _format_user_auth_response(current_user, db)
+
+
+@router.post("/verify-password", status_code=status.HTTP_200_OK)
+def verify_owner_password(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Step-up security verification: confirms the logged-in owner's password
+    before initiating sensitive escrow funding or payment transfers.
+    """
+    raw_password = str(payload.get("password") or "")
+    if not raw_password or not verify_password(raw_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Incorrect account password. Owner verification failed.",
+        )
+    return {"verified": True, "userId": str(current_user.id)}

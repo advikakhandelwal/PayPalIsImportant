@@ -1,10 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useMarketplace } from "@/context/MarketplaceContext";
+import { RequireAuth } from "@/components/auth/RequireAuth";
+import { ContractChatPanel } from "@/components/contracts/ContractChatPanel";
+import { PayPalSmartButtons } from "@/components/paypal/PayPalSmartButtons";
+import { apiClient } from "@/services/api";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -93,6 +97,11 @@ function ClientDashboardContent() {
     rejectApplication,
     approveMilestone,
     requestMilestoneRevision,
+    createPayPalEscrowOrder,
+    authorizePayPalEscrow,
+    releaseMilestoneOverride,
+    releaseContractUpfront,
+    refreshMarketplace,
   } = useMarketplace();
 
   // Frontend UI route guard: show access-denied state if wrong role.
@@ -122,11 +131,11 @@ function ClientDashboardContent() {
   const [isEditingExisting, setIsEditingExisting] = useState<boolean>(false);
   const [editingProjectId, setEditingProjectId] = useState<string>("");
 
-  // Form Fields (Defaults to INR as required)
+  // Form Fields (USD-only settlement for PayPal Escrow compatibility)
   const [newTitle, setNewTitle] = useState("");
   const [newDomain, setNewDomain] = useState("Full-Stack Development");
-  const [newTotalBudget, setNewTotalBudget] = useState<number>(150000);
-  const [newCurrency, setNewCurrency] = useState("INR");
+  const [newTotalBudget, setNewTotalBudget] = useState<number>(2000);
+  const [newCurrency, setNewCurrency] = useState("USD");
   const [newDeadline, setNewDeadline] = useState("2026-12-15");
   const [newDescription, setNewDescription] = useState("");
   const [newSkills, setNewSkills] = useState<string[]>(["React", "TypeScript", "Tailwind CSS"]);
@@ -140,7 +149,7 @@ function ClientDashboardContent() {
       title: "Architecture & Foundation Setup",
       description: "Project scaffolding, core contracts, and responsive layout.",
       percentage: 25,
-      paymentAmount: 37500,
+      paymentAmount: 500,
       deadline: "2026-11-20",
       subtasksApproved: true,
       aiSubdivisionReasoning: "AI Advisory: Milestone divided into 2 technical subtasks totaling 25% of parent budget.",
@@ -152,8 +161,8 @@ function ClientDashboardContent() {
           description: "Establish design tokens, App Router layout, and contracts.",
           percentageOfMilestone: 40,
           percentageOfTotal: 10,
-          paymentAmount: 15000,
-          currency: "INR",
+          paymentAmount: 200,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "Foundational setup requires 40% of parent milestone workload.",
         },
@@ -164,8 +173,8 @@ function ClientDashboardContent() {
           description: "Setup App Router structure and initial state models.",
           percentageOfMilestone: 60,
           percentageOfTotal: 15,
-          paymentAmount: 22500,
-          currency: "INR",
+          paymentAmount: 300,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "State logic and scaffolding comprises 60% of milestone scope.",
         },
@@ -175,7 +184,7 @@ function ClientDashboardContent() {
       title: "Core Feature Implementation",
       description: "Main feature delivery, backend endpoint integration, and responsive verification.",
       percentage: 50,
-      paymentAmount: 75000,
+      paymentAmount: 1000,
       deadline: "2026-12-05",
       subtasksApproved: true,
       aiSubdivisionReasoning: "AI Advisory: Milestone divided into 2 technical subtasks totaling 50% of parent budget.",
@@ -187,8 +196,8 @@ function ClientDashboardContent() {
           description: "Implement interactive dashboard panels and business logic.",
           percentageOfMilestone: 60,
           percentageOfTotal: 30,
-          paymentAmount: 45000,
-          currency: "INR",
+          paymentAmount: 600,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "Core module development represents 60% of milestone effort.",
         },
@@ -199,8 +208,8 @@ function ClientDashboardContent() {
           description: "Form verification, submission endpoints, and error boundaries.",
           percentageOfMilestone: 40,
           percentageOfTotal: 20,
-          paymentAmount: 30000,
-          currency: "INR",
+          paymentAmount: 400,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "Integration and validation comprises 40% of milestone effort.",
         },
@@ -210,7 +219,7 @@ function ClientDashboardContent() {
       title: "Testing, Audit & Final Handover",
       description: "Criteria verification checklist, zero-leak scan, and documentation handover.",
       percentage: 25,
-      paymentAmount: 37500,
+      paymentAmount: 500,
       deadline: "2026-12-15",
       subtasksApproved: true,
       aiSubdivisionReasoning: "AI Advisory: Milestone divided into 2 technical subtasks totaling 25% of parent budget.",
@@ -222,8 +231,8 @@ function ClientDashboardContent() {
           description: "Pass automated linters, accessibility audit, and build trace.",
           percentageOfMilestone: 50,
           percentageOfTotal: 12.5,
-          paymentAmount: 18750,
-          currency: "INR",
+          paymentAmount: 250,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "Security and testing audit takes 50% of milestone scope.",
         },
@@ -234,8 +243,8 @@ function ClientDashboardContent() {
           description: "Clean artifacts, documentation handover, and deployment checklist.",
           percentageOfMilestone: 50,
           percentageOfTotal: 12.5,
-          paymentAmount: 18750,
-          currency: "INR",
+          paymentAmount: 250,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "Handover and release packaging constitutes remaining 50%.",
         },
@@ -261,6 +270,8 @@ function ClientDashboardContent() {
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [revisionMilestoneId, setRevisionMilestoneId] = useState<string>("");
   const [revisionNotes, setRevisionNotes] = useState("");
+  const [revisionErrorMsg, setRevisionErrorMsg] = useState("");
+  const [isSubmittingRevision, setIsSubmittingRevision] = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState("");
 
   // Candidate Dossier Inspection Modal State
@@ -331,6 +342,182 @@ function ClientDashboardContent() {
   const selectedContractForTab =
     myContracts.find((c) => c.id === selectedContractId) ?? myContracts[0] ?? activeContract;
   const escrowStatusInfo = getEscrowStatusInfo(selectedContractForTab.escrowStatus);
+
+  // PayPal Escrow Funding & Audit State
+  const [isFundingEscrow, setIsFundingEscrow] = useState(false);
+  const [acceptingAppId, setAcceptingAppId] = useState<string | null>(null);
+  const [acceptErrorMsg, setAcceptErrorMsg] = useState("");
+  const [paypalErrorMsg, setPaypalErrorMsg] = useState("");
+  const [paypalTxs, setPaypalTxs] = useState<any[]>([]);
+  const [contractSearch, setContractSearch] = useState("");
+  const [contractFilter, setContractFilter] = useState<"ALL" | "AWAITING_AUTHORIZATION" | "ACTIVE" | "COMPLETED">("ALL");
+  const [pendingEscrowCheckout, setPendingEscrowCheckout] = useState<{
+    contractId: string;
+    projectTitle: string;
+    talentName: string;
+    amount: number;
+    currency: string;
+    orderId: string;
+    approvalUrl?: string | null;
+    mode: string;
+  } | null>(null);
+  const [paypalReceipt, setPaypalReceipt] = useState<{
+    contractId: string;
+    orderId?: string | null;
+    authorizationId: string;
+    amount: number;
+    currency: string;
+  } | null>(null);
+
+  // Step-Up Password Security for Escrow Funding & Upfront Overrides
+  const [escrowSecurityPassword, setEscrowSecurityPassword] = useState("");
+  const [payerPaypalEmail, setPayerPaypalEmail] = useState("");
+  const [escrowSecurityVerified, setEscrowSecurityVerified] = useState(false);
+  const [escrowSecurityError, setEscrowSecurityError] = useState("");
+  const [isVerifyingEscrowPass, setIsVerifyingEscrowPass] = useState(false);
+
+  const [overrideAuthModal, setOverrideAuthModal] = useState<{
+    type: "MILESTONE" | "FULL_CONTRACT";
+    contractId: string;
+    milestoneId?: string;
+    title: string;
+    amount: number;
+    currency: string;
+    talentName: string;
+  } | null>(null);
+  const [overridePassword, setOverridePassword] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideError, setOverrideError] = useState("");
+  const [isExecutingOverride, setIsExecutingOverride] = useState(false);
+
+  const filteredContracts = myContracts.filter((c) => {
+    const q = contractSearch.trim().toLowerCase();
+    const matchesSearch =
+      !q ||
+      c.projectTitle.toLowerCase().includes(q) ||
+      c.freelancerName.toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q);
+    if (!matchesSearch) return false;
+    if (contractFilter === "AWAITING_AUTHORIZATION") return c.escrowStatus === "AWAITING_AUTHORIZATION";
+    if (contractFilter === "ACTIVE") return c.escrowStatus === "HELD_IN_ESCROW" || c.escrowStatus === "PARTIALLY_RELEASED";
+    if (contractFilter === "COMPLETED") return c.escrowStatus === "COMPLETED";
+    return true;
+  });
+
+  // Handle PayPal Sandbox checkout redirect return (?paypal=success&token=...&contractId=...)
+  useEffect(() => {
+    const ppStatus = searchParams.get("paypal");
+    const ppToken = searchParams.get("token");
+    const ppContractId = searchParams.get("contractId");
+    if (!ppStatus) return;
+
+    if (ppStatus === "success" && ppToken && ppContractId) {
+      setActiveTab("contracts");
+      setSelectedContractId(ppContractId);
+      setIsFundingEscrow(true);
+      setPaypalErrorMsg("");
+      authorizePayPalEscrow(ppContractId, ppToken)
+        .then(async () => {
+          const updated = await apiClient.getContract(ppContractId).catch(() => null);
+          const txs = await apiClient.getPayPalTransactions(ppContractId).catch(() => []);
+          setPaypalTxs(txs || []);
+          setPaypalReceipt({
+            contractId: ppContractId,
+            orderId: ppToken,
+            authorizationId: updated?.paypalAuthId || ppToken,
+            amount: updated?.totalBudget || 0,
+            currency: updated?.currency || "USD",
+          });
+          setActionSuccessMsg("PayPal Escrow Debited & Locked! Funds held safely and Milestone Step 1 is now ACTIVE.");
+          setTimeout(() => setActionSuccessMsg(""), 6000);
+        })
+        .catch((err: any) => {
+          setPaypalErrorMsg(err?.message || "Failed to authorize PayPal escrow order.");
+        })
+        .finally(() => {
+          setIsFundingEscrow(false);
+          if (typeof window !== "undefined") {
+            window.history.replaceState({}, "", "/client/dashboard?tab=contracts");
+          }
+        });
+    } else if (ppStatus === "cancel") {
+      setActiveTab("contracts");
+      if (ppContractId) setSelectedContractId(ppContractId);
+      setPaypalErrorMsg("PayPal escrow checkout was cancelled. Click 'Fund Escrow with PayPal' whenever ready.");
+      if (typeof window !== "undefined") {
+        window.history.replaceState({}, "", "/client/dashboard?tab=contracts");
+      }
+    }
+  }, [searchParams, authorizePayPalEscrow]);
+
+  // Fetch PayPal audit transactions when viewing active contract
+  useEffect(() => {
+    if (activeTab === "contracts" && selectedContractForTab?.id) {
+      apiClient
+        .getPayPalTransactions(selectedContractForTab.id)
+        .then((txs) => setPaypalTxs(txs || []))
+        .catch(() => setPaypalTxs([]));
+    }
+  }, [activeTab, selectedContractForTab?.id, selectedContractForTab?.escrowStatus, selectedContractForTab?.releasedAmount]);
+
+  const handleFundEscrowWithPayPal = async (contractId: string) => {
+    setIsFundingEscrow(true);
+    setPaypalErrorMsg("");
+    try {
+      const order = await createPayPalEscrowOrder(contractId);
+      if (order.mode === "mock") {
+        await authorizePayPalEscrow(contractId, order.orderId);
+        setActionSuccessMsg("PayPal Escrow Authorized! Funds locked and Step 1 is now ACTIVE.");
+        setTimeout(() => setActionSuccessMsg(""), 5000);
+        const txs = await apiClient.getPayPalTransactions(contractId).catch(() => []);
+        setPaypalTxs(txs);
+        setIsFundingEscrow(false);
+        return;
+      }
+      setPendingEscrowCheckout({
+        contractId: selectedContractForTab.id,
+        projectTitle: selectedContractForTab.projectTitle,
+        talentName: selectedContractForTab.freelancerName,
+        amount: selectedContractForTab.totalBudget,
+        currency: selectedContractForTab.currency,
+        orderId: order.orderId,
+        approvalUrl: order.approvalUrl,
+        mode: order.mode,
+      });
+      setEscrowSecurityVerified(false);
+      setEscrowSecurityPassword("");
+      setEscrowSecurityError("");
+      setIsFundingEscrow(false);
+    } catch (err: any) {
+      setPaypalErrorMsg(err?.message || "Could not create PayPal escrow order.");
+      setIsFundingEscrow(false);
+    }
+  };
+
+  const handleSmartButtonsAuthorized = useCallback(
+    async (res: { orderId?: string | null; authorizationId: string; amount: number; currency: string }) => {
+      if (!pendingEscrowCheckout) return;
+      const cid = pendingEscrowCheckout.contractId;
+      setPendingEscrowCheckout(null);
+      setPaypalReceipt({
+        contractId: cid,
+        orderId: res.orderId,
+        authorizationId: res.authorizationId,
+        amount: res.amount,
+        currency: res.currency,
+      });
+      await refreshMarketplace();
+      const txs = await apiClient.getPayPalTransactions(cid).catch(() => []);
+      setPaypalTxs(txs || []);
+      setActionSuccessMsg("PayPal Escrow Debited & Locked! Funds held safely and Milestone Step 1 is now ACTIVE.");
+      setTimeout(() => setActionSuccessMsg(""), 6000);
+    },
+    [pendingEscrowCheckout, refreshMarketplace]
+  );
+
+  const handleSmartButtonsError = useCallback((msg: string) => {
+    setPaypalErrorMsg(msg);
+  }, []);
 
   // Metrics Calculations for Dashboard Overview
   const totalProjectsCount = projects.length;
@@ -414,7 +601,7 @@ function ClientDashboardContent() {
     setNewTitle(proj.title);
     setNewDomain(proj.domain);
     setNewTotalBudget(proj.totalBudget);
-    setNewCurrency(proj.currency || "INR");
+    setNewCurrency("USD");
     setNewDeadline(proj.deadline ? proj.deadline.split("T")[0] : "2026-12-15");
     setNewDescription(proj.description);
     setNewSkills(proj.requiredSkills || ["Next.js", "TypeScript"]);
@@ -441,8 +628,8 @@ function ClientDashboardContent() {
     setEditingProjectId("");
     setNewTitle("");
     setNewDomain("Full-Stack Development");
-    setNewTotalBudget(150000);
-    setNewCurrency("INR");
+    setNewTotalBudget(3000);
+    setNewCurrency("USD");
     setNewDeadline("2026-12-15");
     setNewDescription("");
     setNewSkills(["React", "TypeScript", "Tailwind CSS"]);
@@ -578,11 +765,47 @@ function ClientDashboardContent() {
     setActiveTab("proposals");
   };
 
-  // Candidate review handlers (wired to shared MarketplaceContext)
-  const handleAcceptCandidate = (appId: string) => {
-    acceptApplication(appId, currentUser.id);
-    setActionSuccessMsg('Candidate accepted! Demo escrow contract record created. Contract now visible to both parties.');
-    setTimeout(() => setActionSuccessMsg(""), 4000);
+  // Candidate review handlers (wired to shared MarketplaceContext + Immediate PayPal Escrow Checkout)
+  const handleAcceptCandidate = async (appId: string) => {
+    if (acceptingAppId) return;
+    setAcceptingAppId(appId);
+    setAcceptErrorMsg("");
+    setPaypalErrorMsg("");
+    try {
+      const createdContract = await acceptApplication(appId, currentUser.id);
+      setSelectedContractId(createdContract.id);
+      setActiveTab("contracts");
+      setActionSuccessMsg(
+        `Candidate accepted! Contract #${createdContract.id} created — please complete PayPal Escrow Authorization to lock funds.`
+      );
+      setTimeout(() => setActionSuccessMsg(""), 6000);
+
+      // Immediately prepare PayPal Orders v2 AUTHORIZE checkout modal
+      try {
+        const order = await createPayPalEscrowOrder(createdContract.id);
+        setEscrowSecurityVerified(false);
+        setEscrowSecurityPassword("");
+        setEscrowSecurityError("");
+        setPendingEscrowCheckout({
+          contractId: createdContract.id,
+          projectTitle: createdContract.projectTitle,
+          talentName: createdContract.freelancerName,
+          amount: createdContract.totalBudget,
+          currency: createdContract.currency,
+          orderId: order.orderId,
+          approvalUrl: order.approvalUrl,
+          mode: order.mode,
+        });
+      } catch (ppErr: any) {
+        setPaypalErrorMsg(
+          ppErr?.message || "Contract created! Click 'Fund Escrow with PayPal' below to lock funds."
+        );
+      }
+    } catch (err: any) {
+      setAcceptErrorMsg(err?.message || "Failed to accept candidate. Please try again.");
+    } finally {
+      setAcceptingAppId(null);
+    }
   };
 
   const handleDeclineCandidate = (appId: string) => {
@@ -591,26 +814,138 @@ function ClientDashboardContent() {
     setTimeout(() => setActionSuccessMsg(""), 2500);
   };
 
-  const handleApproveMilestone = (milestoneId: string) => {
-    approveMilestone(selectedContractForTab.id, milestoneId);
-    setActionSuccessMsg("Milestone approved! Payout released from escrow to talent.");
-    setTimeout(() => setActionSuccessMsg(""), 3500);
+  const handleApproveMilestone = async (milestoneId: string) => {
+    setPaypalErrorMsg("");
+    try {
+      await approveMilestone(selectedContractForTab.id, milestoneId);
+      setActionSuccessMsg("Milestone approved! Payout released from escrow to talent.");
+      setTimeout(() => setActionSuccessMsg(""), 3500);
+      const txs = await apiClient.getPayPalTransactions(selectedContractForTab.id).catch(() => []);
+      setPaypalTxs(txs);
+    } catch (err: any) {
+      setPaypalErrorMsg(err?.message || "Failed to approve and capture milestone.");
+    }
+  };
+
+  const handleOverrideMilestoneRelease = (milestoneId: string, title: string, amt: number, curr: string) => {
+    setOverridePassword("");
+    setOverrideReason("");
+    setOverrideError("");
+    setOverrideAuthModal({
+      type: "MILESTONE",
+      contractId: selectedContractForTab.id,
+      milestoneId,
+      title,
+      amount: amt,
+      currency: curr,
+      talentName: selectedContractForTab.freelancerName,
+    });
+  };
+
+  const handleReleaseAllUpfront = (contractId: string) => {
+    setOverridePassword("");
+    setOverrideReason("");
+    setOverrideError("");
+    setOverrideAuthModal({
+      type: "FULL_CONTRACT",
+      contractId,
+      title: selectedContractForTab.projectTitle,
+      amount: selectedContractForTab.heldInEscrowAmount,
+      currency: selectedContractForTab.currency,
+      talentName: selectedContractForTab.freelancerName,
+    });
+  };
+
+  const handleConfirmOverrideSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!overrideAuthModal) return;
+    if (!overridePassword) {
+      setOverrideError("Account password is required to authorize this transfer.");
+      return;
+    }
+    setIsExecutingOverride(true);
+    setOverrideError("");
+    try {
+      if (overrideAuthModal.type === "MILESTONE" && overrideAuthModal.milestoneId) {
+        await releaseMilestoneOverride(
+          overrideAuthModal.contractId,
+          overrideAuthModal.milestoneId,
+          overridePassword,
+          overrideReason.trim() || "Client password-verified upfront milestone release"
+        );
+        setActionSuccessMsg(
+          `Password verified! ${formatCurrency(overrideAuthModal.amount, overrideAuthModal.currency)} released upfront to ${overrideAuthModal.talentName}.`
+        );
+      } else {
+        await releaseContractUpfront(
+          overrideAuthModal.contractId,
+          overridePassword,
+          overrideReason.trim() || "Client password-verified full upfront release"
+        );
+        setActionSuccessMsg(
+          `Password verified! Full balance (${formatCurrency(overrideAuthModal.amount, overrideAuthModal.currency)}) released to ${overrideAuthModal.talentName}.`
+        );
+      }
+      const cid = overrideAuthModal.contractId;
+      setOverrideAuthModal(null);
+      setOverridePassword("");
+      setTimeout(() => setActionSuccessMsg(""), 5000);
+      const txs = await apiClient.getPayPalTransactions(cid).catch(() => []);
+      setPaypalTxs(txs);
+    } catch (err: any) {
+      setOverrideError(err?.message || "Password verification failed or payment release declined.");
+    } finally {
+      setIsExecutingOverride(false);
+    }
+  };
+
+  const handleVerifyEscrowPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEscrowSecurityError("");
+    if (!escrowSecurityPassword) {
+      setEscrowSecurityError("Please enter your TrustPay account password.");
+      return;
+    }
+    if (payerPaypalEmail && payerPaypalEmail.trim().toLowerCase().includes("@business.example.com")) {
+      setEscrowSecurityError(
+        "Do not use a @business.example.com seller email to pay! Use a US Personal buyer (@personal.example.com) or card."
+      );
+      return;
+    }
+    setIsVerifyingEscrowPass(true);
+    try {
+      await apiClient.verifyPassword(escrowSecurityPassword);
+      setEscrowSecurityVerified(true);
+    } catch (err: any) {
+      setEscrowSecurityError(err?.message || "Incorrect password. Owner verification failed.");
+    } finally {
+      setIsVerifyingEscrowPass(false);
+    }
   };
 
   const handleOpenRevisionModal = (milestoneId: string) => {
     setRevisionMilestoneId(milestoneId);
     setRevisionNotes("");
+    setRevisionErrorMsg("");
     setIsRevisionModalOpen(true);
   };
 
-  const handleConfirmRevision = (e: React.FormEvent) => {
+  const handleConfirmRevision = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!revisionNotes.trim()) return;
+    if (!revisionNotes.trim() || isSubmittingRevision) return;
 
-    requestMilestoneRevision(selectedContractForTab.id, revisionMilestoneId, revisionNotes.trim());
-    setIsRevisionModalOpen(false);
-    setActionSuccessMsg("Revision request with feedback sent to talent.");
-    setTimeout(() => setActionSuccessMsg(""), 3500);
+    setIsSubmittingRevision(true);
+    setRevisionErrorMsg("");
+    try {
+      await requestMilestoneRevision(selectedContractForTab.id, revisionMilestoneId, revisionNotes.trim());
+      setIsRevisionModalOpen(false);
+      setActionSuccessMsg("Revision request with feedback sent to talent.");
+      setTimeout(() => setActionSuccessMsg(""), 3500);
+    } catch (err: any) {
+      setRevisionErrorMsg(err?.message || "Cannot request revision on this milestone.");
+    } finally {
+      setIsSubmittingRevision(false);
+    }
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -1225,23 +1560,17 @@ function ClientDashboardContent() {
                       />
                     </div>
 
-                    {/* Currency */}
+                    {/* Fixed USD Settlement */}
                     <div className="space-y-1.5 text-left">
                       <label className="block text-xs font-bold text-gray-700">
-                        Currency <span className="text-rose-500 font-bold ml-1">*</span>
+                        Settlement Currency
                       </label>
-                      <select
-                        value={newCurrency}
-                        onChange={(e) => setNewCurrency(e.target.value)}
-                        className="w-full h-11 px-4 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0070E0]"
-                      >
-                        <option value="INR">INR (₹)</option>
-                        <option value="USD">USD ($)</option>
-                        <option value="EUR">EUR (€)</option>
-                        <option value="GBP">GBP (£)</option>
-                        <option value="CAD">CAD ($)</option>
-                        <option value="AUD">AUD ($)</option>
-                      </select>
+                      <div className="w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm font-semibold text-gray-700 flex items-center justify-between">
+                        <span>USD ($)</span>
+                        <span className="text-[10px] font-bold uppercase text-[#0070E0] bg-blue-50 px-2 py-0.5 rounded-full">
+                          PayPal Standard
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -1918,6 +2247,15 @@ function ClientDashboardContent() {
             </div>
           </div>
 
+          {acceptErrorMsg && (
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center justify-between">
+              <span>{acceptErrorMsg}</span>
+              <button onClick={() => setAcceptErrorMsg("")} className="text-rose-500 hover:text-rose-800 ml-3">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {/* Project Specific Filter Pills if set */}
           {filterByProjectId !== "ALL" && (
             <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 text-[#0070E0] rounded-2xl text-xs font-semibold">
@@ -2031,10 +2369,11 @@ function ClientDashboardContent() {
                           variant="primary"
                           size="sm"
                           className="text-xs"
+                          disabled={acceptingAppId === app.id}
                           onClick={() => handleAcceptCandidate(app.id)}
                         >
                           <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                          Accept Candidate &amp; Lock Escrow
+                          {acceptingAppId === app.id ? "Creating Escrow..." : "Accept & Fund Escrow"}
                         </Button>
                       </>
                     )}
@@ -2079,35 +2418,102 @@ function ClientDashboardContent() {
             </Badge>
           </div>
 
-          {/* Contract Selector – shown when client has multiple contracts */}
-          {myContracts.length > 1 && (
-            <Card className="border-gray-100 bg-white p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <span className="text-xs font-bold text-gray-700 shrink-0">Select Contract:</span>
-                <select
-                  value={selectedContractId || selectedContractForTab.id}
-                  onChange={(e) => setSelectedContractId(e.target.value)}
-                  className="flex-1 h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
-                >
-                  {myContracts.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.projectTitle} — {c.freelancerName} ({c.id})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </Card>
-          )}
-
           {myContracts.length === 0 && (
             <div className="p-12 text-center text-gray-500 bg-white rounded-2xl border border-gray-100">
               <Lock className="w-8 h-8 text-gray-300 mx-auto mb-2" />
               <p className="text-sm font-semibold">No active contracts yet.</p>
-              <p className="text-xs text-gray-400 mt-1">Accept a candidate proposal to create a demo escrow contract record.</p>
+              <p className="text-xs text-gray-400 mt-1">Accept a candidate proposal to create an escrow contract and fund it via PayPal.</p>
             </div>
           )}
 
           {myContracts.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Sidebar: Visual Contract Cards List + Search/Filter */}
+            <div className="lg:col-span-4 space-y-3">
+              <Card className="border-gray-100 bg-white p-3.5 rounded-2xl space-y-3 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-[#003087] uppercase tracking-wider">
+                    Your Contracts ({filteredContracts.length}/{myContracts.length})
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={contractSearch}
+                  onChange={(e) => setContractSearch(e.target.value)}
+                  placeholder="Search project, talent, or ID..."
+                  className="w-full h-9 px-3 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: "ALL", label: "All" },
+                    { id: "AWAITING_AUTHORIZATION", label: "Needs Funding" },
+                    { id: "ACTIVE", label: "Active" },
+                    { id: "COMPLETED", label: "Completed" },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setContractFilter(f.id as any)}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-colors cursor-pointer ${
+                        contractFilter === f.id
+                          ? "bg-[#003087] text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </Card>
+
+              <div className="space-y-2.5 max-h-[680px] overflow-y-auto pr-1">
+                {filteredContracts.map((c) => {
+                  const isSelected = c.id === selectedContractForTab.id;
+                  const cInfo = getEscrowStatusInfo(c.escrowStatus);
+                  const hasReviewPending = c.milestones.some((m) => m.status === "IN_REVIEW" || m.status === "SUBMITTED");
+                  const pct = c.totalBudget > 0 ? Math.round((c.releasedAmount / c.totalBudget) * 100) : 0;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSelectedContractId(c.id)}
+                      className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                        isSelected
+                          ? "border-[#0070E0] bg-blue-50/40 ring-2 ring-[#0070E0]/20 shadow-sm"
+                          : "border-gray-200 bg-white hover:border-blue-200"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <h4 className="font-bold text-xs text-gray-900 line-clamp-1">{c.projectTitle}</h4>
+                        <span className="font-extrabold text-xs text-[#003087] shrink-0">
+                          {formatCurrency(c.totalBudget, c.currency)}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mb-2 truncate">
+                        Talent: <strong className="text-gray-700">{c.freelancerName}</strong> • #{c.id}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                        <Badge variant={cInfo.variant} size="sm">{cInfo.label}</Badge>
+                        {hasReviewPending && (
+                          <Badge variant="inReview" size="sm">Submission Ready</Badge>
+                        )}
+                      </div>
+                      <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#0070E0] rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                    </button>
+                  );
+                })}
+                {filteredContracts.length === 0 && (
+                  <div className="p-6 text-center text-xs text-gray-400 bg-white rounded-2xl border border-gray-100">
+                    No contracts match your search/filter.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Panel: Selected Contract Full Escrow Workspace */}
+            <div className="lg:col-span-8">
           <Card className="border-gray-100 bg-white shadow-lg rounded-3xl overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-b border-gray-100">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2125,6 +2531,19 @@ function ClientDashboardContent() {
                       {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
                     </p>
                   </div>
+                  {(selectedContractForTab.escrowStatus === "HELD_IN_ESCROW" ||
+                    selectedContractForTab.escrowStatus === "PARTIALLY_RELEASED") &&
+                    selectedContractForTab.heldInEscrowAmount > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleReleaseAllUpfront(selectedContractForTab.id)}
+                        className="border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold"
+                      >
+                        <DollarSign className="w-3.5 h-3.5 mr-1" />
+                        Override &amp; Pay Full Upfront
+                      </Button>
+                    )}
                   <Link
                     href={`/client/disputes/${selectedContractForTab.id}`}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-2xs"
@@ -2137,6 +2556,69 @@ function ClientDashboardContent() {
               </div>
             </CardHeader>
             <CardContent className="space-y-6 pt-6">
+              {/* PayPal Escrow Payment Receipt / Live Funded Status Banner */}
+              {(paypalReceipt?.contractId === selectedContractForTab.id ||
+                selectedContractForTab.escrowStatus === "HELD_IN_ESCROW" ||
+                selectedContractForTab.escrowStatus === "PARTIALLY_RELEASED" ||
+                selectedContractForTab.escrowStatus === "COMPLETED") && (
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="text-xs space-y-0.5">
+                      <p className="font-extrabold text-emerald-900">
+                        Escrow Funded &amp; Debited via PayPal:{" "}
+                        {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
+                      </p>
+                      <p className="text-emerald-800">
+                        {selectedContractForTab.paypalAuthId
+                          ? `PayPal Authorization ID: ${selectedContractForTab.paypalAuthId}`
+                          : "Escrow Hold Active"}
+                        {selectedContractForTab.paypalCaptureId
+                          ? ` • Latest Capture ID: ${selectedContractForTab.paypalCaptureId}`
+                          : " • Funds held securely until you approve deliverables"}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="success" size="sm">Escrow Locked</Badge>
+                </div>
+              )}
+
+              {/* PayPal Escrow Funding Callout when AWAITING_AUTHORIZATION */}
+              {selectedContractForTab.escrowStatus === "AWAITING_AUTHORIZATION" && (
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-[#003087]/5 via-[#0070E0]/10 to-indigo-50 border border-[#0070E0]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-[#0070E0]" />
+                      <h4 className="text-sm font-extrabold text-[#003087]">
+                        Fund Escrow via PayPal Sandbox (Orders v2 Authorize)
+                      </h4>
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      Lock <strong>{formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}</strong> into PayPal escrow to unlock Milestone Step 1. Funds are only captured partwise as you approve deliverables.
+                    </p>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    disabled={isFundingEscrow}
+                    onClick={() => handleFundEscrowWithPayPal(selectedContractForTab.id)}
+                    className="shrink-0 bg-[#0070E0] hover:bg-[#003087] text-white font-bold shadow-md"
+                  >
+                    <Lock className="w-4 h-4 mr-1.5" />
+                    {isFundingEscrow ? "Connecting to PayPal..." : "Fund Escrow with PayPal"}
+                  </Button>
+                </div>
+              )}
+
+              {paypalErrorMsg && (
+                <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between">
+                  <span>{paypalErrorMsg}</span>
+                  <button onClick={() => setPaypalErrorMsg("")} className="text-red-500 hover:text-red-800 ml-3">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-100">
                 <div>
                   <span className="text-xs text-gray-500 block">Funds Held in Escrow</span>
@@ -2153,8 +2635,91 @@ function ClientDashboardContent() {
                 <div>
                   <span className="text-xs text-gray-500 block">Settlement Progress</span>
                   <span className="text-lg font-bold text-[#0070E0]">
-                    {Math.round((selectedContractForTab.releasedAmount / selectedContractForTab.totalBudget) * 100)}%
+                    {selectedContractForTab.totalBudget > 0
+                      ? Math.round((selectedContractForTab.releasedAmount / selectedContractForTab.totalBudget) * 100)
+                      : 0}
+                    %
                   </span>
+                </div>
+              </div>
+
+              {/* Assigned Talent & Project Brief Overview */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="p-4 rounded-2xl bg-blue-50/40 border border-blue-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#003087]">
+                      Assigned Talent Working on Project
+                    </span>
+                    {selectedContractForTab.freelancerRating ? (
+                      <Badge variant="success" size="sm">★ {selectedContractForTab.freelancerRating.toFixed(1)}</Badge>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#0070E0] text-white flex items-center justify-center font-bold text-sm shrink-0">
+                      {selectedContractForTab.freelancerName?.charAt(0).toUpperCase() || "T"}
+                    </div>
+                    <div className="min-w-0 text-xs">
+                      <p className="font-bold text-gray-900 truncate">{selectedContractForTab.freelancerName}</p>
+                      <p className="text-gray-500 truncate">
+                        {selectedContractForTab.freelancerDomain || "Freelancer"}
+                        {selectedContractForTab.freelancerEmail ? ` • ${selectedContractForTab.freelancerEmail}` : ""}
+                      </p>
+                      {(selectedContractForTab.freelancerPayoutEmail || selectedContractForTab.freelancerEmail) && (
+                        <p className="text-[11px] text-[#003087] font-medium truncate mt-0.5">
+                          PayPal Payout Email:{" "}
+                          <span className="font-mono">
+                            {selectedContractForTab.freelancerPayoutEmail || selectedContractForTab.freelancerEmail}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {selectedContractForTab.freelancerBadges && selectedContractForTab.freelancerBadges.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {selectedContractForTab.freelancerBadges.map((b) => (
+                        <Badge key={b} variant="paypal" size="sm">{b}</Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                      Project Brief &amp; Deadline
+                    </span>
+                    <span className="text-[11px] font-semibold text-[#003087]">
+                      Due: {selectedContractForTab.projectDeadline ? formatDate(selectedContractForTab.projectDeadline) : "Flexible"}
+                    </span>
+                  </div>
+                  <p className="text-gray-600 line-clamp-3 leading-relaxed">
+                    {selectedContractForTab.projectDescription || "Escrow milestone contract active."}
+                  </p>
+                  <div className="pt-1">
+                    <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
+                      <span>Milestone Progress</span>
+                      <span className="font-bold text-[#003087]">
+                        {selectedContractForTab.milestones.filter((m) => m.status === "RELEASED").length} /{" "}
+                        {selectedContractForTab.milestones.length} Completed
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#0070E0] rounded-full transition-all"
+                        style={{
+                          width: `${
+                            selectedContractForTab.milestones.length > 0
+                              ? Math.round(
+                                  (selectedContractForTab.milestones.filter((m) => m.status === "RELEASED").length /
+                                    selectedContractForTab.milestones.length) *
+                                    100
+                                )
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2314,39 +2879,111 @@ function ClientDashboardContent() {
                             <span className="font-bold text-gray-800">
                               Disbursement: {formatCurrency(ms.paymentAmount, ms.currency)} ({ms.percentage}%)
                             </span>
-                            <span className="text-gray-400 ml-2">Due {formatDate(ms.deadline)}</span>
+                            <span className="text-gray-400 ml-2">
+                              Due {ms.deadline || selectedContractForTab.projectDeadline ? formatDate(ms.deadline || selectedContractForTab.projectDeadline!) : "No deadline set"}
+                            </span>
                           </div>
 
-                          {/* Client Approval Controls */}
-                          {(ms.status === "IN_REVIEW" || ms.status === "SUBMITTED") && (
-                            <div className="flex items-center gap-2">
+                          {/* Client Approval & Override Controls */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {ms.status === "ACTIVE" && !ms.submission && (
+                              <span className="text-[11px] text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full font-medium">
+                                Awaiting talent submission
+                              </span>
+                            )}
+                            {ms.status === "ACTIVE" && (
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="text-xs text-amber-700 hover:bg-amber-50"
-                                onClick={() => handleOpenRevisionModal(ms.id)}
+                                className="text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                onClick={() => handleOverrideMilestoneRelease(ms.id, ms.title, ms.paymentAmount, ms.currency)}
                               >
-                                Request Changes
+                                <DollarSign className="w-3.5 h-3.5 mr-1" />
+                                Release Upfront (Override)
                               </Button>
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                className="text-xs"
-                                onClick={() => handleApproveMilestone(ms.id)}
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                                Approve &amp; Release Payment
-                              </Button>
-                            </div>
-                          )}
+                            )}
+                            {(ms.status === "IN_REVIEW" || ms.status === "SUBMITTED" || ms.status === "REVISION_REQUESTED") && (
+                              <>
+                                {ms.status !== "REVISION_REQUESTED" &&
+                                  Boolean(ms.submission || (ms.submissionHistory && ms.submissionHistory.length > 0)) && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-xs text-amber-700 hover:bg-amber-50"
+                                    onClick={() => handleOpenRevisionModal(ms.id)}
+                                  >
+                                    Request Changes
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  className="text-xs"
+                                  onClick={() => handleApproveMilestone(ms.id)}
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                  Approve &amp; Release Payment
+                                </Button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
+
+              {/* PayPal Escrow Audit Ledger */}
+              {paypalTxs.length > 0 && (
+                <div className="pt-4 border-t border-gray-100 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-[#003087] uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-[#0070E0]" />
+                      PayPal Escrow Audit Ledger ({paypalTxs.length})
+                    </h3>
+                    <Badge variant="paypal" size="sm">PayPal {paypalTxs[0]?.mode?.toUpperCase() || "SANDBOX"}</Badge>
+                  </div>
+                  <div className="space-y-2">
+                    {paypalTxs.map((tx) => (
+                      <div
+                        key={tx.id}
+                        className="p-3 rounded-xl bg-gray-50 border border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                      >
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-800">{tx.operation}</span>
+                            <Badge variant={tx.status === "COMPLETED" ? "success" : "warning"} size="sm">
+                              {tx.status}
+                            </Badge>
+                          </div>
+                          <div className="text-[11px] font-mono text-gray-500 flex flex-wrap gap-x-3">
+                            {tx.paypalOrderId && <span>Order: {tx.paypalOrderId}</span>}
+                            {tx.paypalAuthId && <span>Auth: {tx.paypalAuthId}</span>}
+                            {tx.paypalCaptureId && <span>Capture: {tx.paypalCaptureId}</span>}
+                            {tx.paypalPayoutBatchId && <span>Payout: {tx.paypalPayoutBatchId}</span>}
+                            {tx.paypalRefundId && <span>Refund: {tx.paypalRefundId}</span>}
+                          </div>
+                        </div>
+                        <span className="font-bold text-[#003087] shrink-0">
+                          {formatCurrency(tx.amount, tx.currency)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Direct Project Discussion with Assigned Talent */}
+              <ContractChatPanel
+                contractId={selectedContractForTab.id}
+                counterpartyName={selectedContractForTab.freelancerName}
+                counterpartyRoleLabel="Talent"
+              />
             </CardContent>
           </Card>
+            </div>
+          </div>
           )}
         </div>
       )}
@@ -2862,6 +3499,11 @@ function ClientDashboardContent() {
             </div>
 
             <form onSubmit={handleConfirmRevision} className="p-6 space-y-4">
+              {revisionErrorMsg && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                  {revisionErrorMsg}
+                </div>
+              )}
               <Textarea
                 label="Punch-list & Feedback Notes"
                 required
@@ -2880,8 +3522,249 @@ function ClientDashboardContent() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" variant="primary" size="sm">
-                  Send Revision Request
+                <Button type="submit" variant="primary" size="sm" disabled={isSubmittingRevision}>
+                  {isSubmittingRevision ? "Sending..." : "Send Revision Request"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── PayPal Immediate Escrow Checkout Modal (Triggered on Candidate Accept) ── */}
+      {pendingEscrowCheckout && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden p-6 space-y-5 animate-slide-up">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-blue-50 text-[#0070E0] flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-[#003087]">Lock Escrow via PayPal</h3>
+                  <p className="text-xs text-gray-500">Contract #{pendingEscrowCheckout.contractId} Created</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPendingEscrowCheckout(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Project:</span>
+                <strong className="text-gray-900 text-right">{pendingEscrowCheckout.projectTitle}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Assigned Talent:</span>
+                <strong className="text-gray-900">{pendingEscrowCheckout.talentName}</strong>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-blue-100">
+                <span className="text-gray-600 font-semibold">Escrow Amount to Hold:</span>
+                <strong className="text-base font-extrabold text-[#003087]">
+                  {formatCurrency(pendingEscrowCheckout.amount, pendingEscrowCheckout.currency)}
+                </strong>
+              </div>
+              <div className="text-[11px] font-mono text-gray-500 pt-1">
+                PayPal Order ID: {pendingEscrowCheckout.orderId}
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Your funds will be authorized and debited into PayPal Escrow so{" "}
+              <strong>{pendingEscrowCheckout.talentName}</strong> can begin Milestone Step 1.
+            </p>
+
+            {/* Step 1: Owner Password & Payer Verification Gate */}
+            {!escrowSecurityVerified ? (
+              <form onSubmit={handleVerifyEscrowPassword} className="space-y-3 p-4 rounded-2xl bg-gray-50 border border-gray-200">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#003087]">
+                  <Lock className="w-4 h-4 text-[#0070E0]" />
+                  <span>Security Check: Verify Owner Credentials Before PayPal Checkout</span>
+                </div>
+                {escrowSecurityError && (
+                  <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 p-2.5 rounded-xl">
+                    {escrowSecurityError}
+                  </p>
+                )}
+                <Input
+                  label="Payer PayPal Buyer Email (Optional confirmation)"
+                  type="email"
+                  placeholder="e.g. sb-buyer@personal.example.com"
+                  value={payerPaypalEmail}
+                  onChange={(e) => setPayerPaypalEmail(e.target.value)}
+                />
+                <Input
+                  label="Your TrustPay Account Password"
+                  type="password"
+                  required
+                  placeholder="Enter your password to unlock PayPal checkout"
+                  value={escrowSecurityPassword}
+                  onChange={(e) => setEscrowSecurityPassword(e.target.value)}
+                />
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="md"
+                  disabled={isVerifyingEscrowPass}
+                  className="w-full"
+                >
+                  <ShieldCheck className="w-4 h-4 mr-1.5" />
+                  {isVerifyingEscrowPass ? "Verifying Owner..." : "Verify Owner & Unlock PayPal Payment"}
+                </Button>
+              </form>
+            ) : (
+            <div className="flex flex-col gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Owner verified! Complete your PayPal Buyer login or use Simulated PayPal Escrow below.</span>
+              </div>
+
+              {paypalErrorMsg && (
+                <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 p-2.5 rounded-xl">
+                  {paypalErrorMsg}
+                </p>
+              )}
+
+              {pendingEscrowCheckout.mode !== "mock" ? (
+                <>
+                  <PayPalSmartButtons
+                    contractId={pendingEscrowCheckout.contractId}
+                    currency={pendingEscrowCheckout.currency}
+                    onAuthorized={handleSmartButtonsAuthorized}
+                    onError={handleSmartButtonsError}
+                  />
+                  {pendingEscrowCheckout.approvalUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.location.href = pendingEscrowCheckout.approvalUrl!;
+                      }}
+                      className="text-center text-[11px] font-semibold text-[#0070E0] hover:underline cursor-pointer"
+                    >
+                      Or open PayPal Sandbox Checkout in full window →
+                    </button>
+                  )}
+                </>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="md"
+                  disabled={isFundingEscrow}
+                  onClick={async () => {
+                    setIsFundingEscrow(true);
+                    setPaypalErrorMsg("");
+                    try {
+                      await authorizePayPalEscrow(pendingEscrowCheckout.contractId, pendingEscrowCheckout.orderId, true);
+                      setPendingEscrowCheckout(null);
+                      setActionSuccessMsg("PayPal Escrow Authorized! Funds locked and Step 1 is now ACTIVE.");
+                    } catch (err: any) {
+                      setPaypalErrorMsg(err?.message || "Failed to lock escrow.");
+                    } finally {
+                      setIsFundingEscrow(false);
+                    }
+                  }}
+                  className="w-full bg-[#003087] hover:bg-[#001f5c] text-white font-bold"
+                >
+                  <Lock className="w-4 h-4 mr-1.5" />
+                  {isFundingEscrow
+                    ? "Authorizing Escrow..."
+                    : `Authorize & Lock ${formatCurrency(pendingEscrowCheckout.amount, pendingEscrowCheckout.currency)}`}
+                </Button>
+              )}
+            </div>
+            )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPendingEscrowCheckout(null)}
+              className="w-full text-xs text-gray-500"
+            >
+              I&apos;ll Fund Later from Active Contracts
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Password-Authenticated Upfront / Override Transfer Modal ── */}
+      {overrideAuthModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden p-6 space-y-4 animate-slide-up">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-gray-900">
+                    {overrideAuthModal.type === "MILESTONE"
+                      ? "Password-Protected Upfront Override"
+                      : "Full Upfront Escrow Release"}
+                  </h3>
+                  <p className="text-xs text-gray-500">Owner verification required to transfer funds</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setOverrideAuthModal(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 text-xs space-y-1.5">
+              <p className="text-amber-900">
+                You are overriding standard verification gates to immediately transfer{" "}
+                <strong>{formatCurrency(overrideAuthModal.amount, overrideAuthModal.currency)}</strong> to{" "}
+                <strong>{overrideAuthModal.talentName}</strong> ({overrideAuthModal.title}).
+              </p>
+            </div>
+
+            {overrideError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                {overrideError}
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmOverrideSubmit} className="space-y-3">
+              <Input
+                label="Confirm Account Password"
+                type="password"
+                required
+                placeholder="Enter your TrustPay account password"
+                value={overridePassword}
+                onChange={(e) => setOverridePassword(e.target.value)}
+              />
+              <Input
+                label="Override Reason (Optional audit note)"
+                placeholder="e.g. Approved early milestone release"
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+              />
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setOverrideAuthModal(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  disabled={isExecutingOverride}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  <Lock className="w-3.5 h-3.5 mr-1.5" />
+                  {isExecutingOverride
+                    ? "Verifying & Transferring..."
+                    : `Confirm & Transfer ${formatCurrency(overrideAuthModal.amount, overrideAuthModal.currency)}`}
                 </Button>
               </div>
             </form>
@@ -2894,8 +3777,10 @@ function ClientDashboardContent() {
 
 export default function ClientDashboardPage() {
   return (
-    <Suspense fallback={<div className="p-12 text-center text-xs text-gray-400">Loading Client Dashboard...</div>}>
-      <ClientDashboardContent />
-    </Suspense>
+    <RequireAuth requiredRole="CLIENT">
+      <Suspense fallback={<div className="p-12 text-center text-xs text-gray-400">Loading Client Dashboard...</div>}>
+        <ClientDashboardContent />
+      </Suspense>
+    </RequireAuth>
   );
 }
