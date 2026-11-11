@@ -49,10 +49,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             required={required}
             className={cn(
               "w-full h-11 px-4 rounded-xl border bg-white text-sm text-gray-900 placeholder:text-gray-400 transition-all shadow-2xs",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0070E0] focus-visible:border-transparent",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#087EAA] focus-visible:border-transparent",
               "disabled:opacity-50 disabled:bg-gray-50 disabled:cursor-not-allowed",
               isPasswordField && "pr-10",
-              error ? "border-rose-400 focus-visible:ring-rose-400" : "border-gray-200 hover:border-gray-300",
+              error ? "border-rose-400 focus-visible:ring-rose-400" : "border-[#E0E8F0] hover:border-[#087EAA]/40",
               className
             )}
             {...props}

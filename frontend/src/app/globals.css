@@ -5,34 +5,79 @@
 @tailwind utilities;
 
 :root {
-  --paypal-blue: #0070E0;
-  --paypal-dark: #003087;
-  --bg-light: #F5F7FA;
-  --background: #FFFFFF;
-  --foreground: #1a1e26;
+  --brand-navy: #073B68;
+  --brand-blue: #087EAA;
+  --brand-teal: #16A6A1;
+  --brand-amber: #F0A44B;
+  --brand-bg: #F5F8FC;
+  --brand-surface: #FFFFFF;
+  --brand-text: #25364A;
+  --brand-muted: #64748B;
+  --brand-border: #E5ECF6;
+  
+  --paypal-blue: #087EAA;
+  --paypal-dark: #073B68;
+  --background: #F5F8FC;
+  --foreground: #25364A;
 }
 
 html {
   scroll-behavior: smooth;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
 body {
-  color: var(--foreground);
-  background-color: var(--background);
+  color: var(--brand-text);
+  background-color: var(--brand-bg);
   font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* SuperDesign Styles & Micro-interactions */
-.hero-gradient {
-  background: radial-gradient(circle at top right, rgba(0, 112, 224, 0.05), transparent),
-              radial-gradient(circle at bottom left, rgba(0, 48, 135, 0.02), transparent);
+/* Tabular numerals for financial amounts & metrics */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Premium Fintech Hero Gradient & Grid */
+.fintech-hero-gradient {
+  background: 
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(8, 126, 170, 0.12), transparent),
+    radial-gradient(circle at 10% 20%, rgba(22, 166, 161, 0.06), transparent 35%),
+    radial-gradient(circle at 90% 10%, rgba(7, 59, 104, 0.08), transparent 35%),
+    #F5F8FC;
+}
+
+.fintech-subtle-mesh {
+  background-image: 
+    radial-gradient(at 100% 0%, rgba(8, 126, 170, 0.04) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, rgba(22, 166, 161, 0.04) 0px, transparent 50%);
+}
+
+.fintech-card {
+  background-color: #FFFFFF;
+  border: 1px solid #E5ECF6;
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 20px -2px rgba(7, 59, 104, 0.05), 0 2px 6px -1px rgba(7, 59, 104, 0.02);
+  transition: box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
+}
+
+.fintech-card:hover {
+  box-shadow: 0 14px 28px -4px rgba(7, 59, 104, 0.09), 0 4px 10px -2px rgba(7, 59, 104, 0.04);
+  border-color: #D2E3F4;
+}
+
+.card-hover {
+  transition: box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+
+.card-hover:hover {
+  box-shadow: 0 16px 32px -4px rgba(7, 59, 104, 0.10), 0 4px 12px -2px rgba(7, 59, 104, 0.04);
 }
 
 .nav-link {
   position: relative;
-  transition: color 0.3s ease;
+  transition: color 0.2s ease;
 }
 
 .nav-link::after {
@@ -41,9 +86,10 @@ body {
   bottom: -4px;
   left: 0;
   width: 0;
-  height: 2px;
-  background-color: var(--paypal-blue);
-  transition: width 0.3s ease;
+  height: 2.5px;
+  border-radius: 9999px;
+  background-color: var(--brand-blue);
+  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .nav-link:hover::after,
@@ -52,38 +98,37 @@ body {
 }
 
 .btn-shadow {
-  box-shadow: 0 4px 14px 0 rgba(0, 112, 224, 0.39);
+  box-shadow: 0 4px 14px 0 rgba(8, 126, 170, 0.35);
 }
 
-.card-hover {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+.btn-shadow:hover {
+  box-shadow: 0 6px 20px 0 rgba(8, 126, 170, 0.45);
 }
 
-.card-hover:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.05);
+.btn-teal-shadow {
+  box-shadow: 0 4px 14px 0 rgba(22, 166, 161, 0.35);
 }
 
-/* Custom scrollbar for sleek fintech look */
+/* Custom sleek fintech scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #F1F5F9;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #CBD5E1;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #94A3B8;
 }
 
-/* Subtle micro-interactions and transitions */
+/* Animations */
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -92,7 +137,7 @@ body {
 @keyframes slideUpSubtle {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -100,15 +145,62 @@ body {
   }
 }
 
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes pulseSubtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+
 .animate-fade-in {
-  animation: fadeIn 180ms ease-out forwards;
+  animation: fadeIn 200ms ease-out forwards;
 }
 
 .animate-slide-up {
-  animation: slideUpSubtle 220ms ease-out forwards;
+  animation: slideUpSubtle 240ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Accessibility: Respect user reduced-motion preferences */
+.animate-float-slow {
+  animation: floatSlow 5s ease-in-out infinite;
+}
+
+@keyframes pageEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-page-enter {
+  animation: pageEnter 280ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: opacity, transform;
+}
+
+/* Micro-interactions: Button & interactive press response */
+button:active:not(:disabled),
+.btn-shadow:active,
+.btn-teal-shadow:active {
+  transform: scale(0.98);
+  transition: transform 0.1s ease;
+}
+
+/* Modal and dialog backdrop animation */
+.modal-backdrop-enter {
+  animation: fadeIn 200ms ease-out forwards;
+}
+
+.modal-content-enter {
+  animation: slideUpSubtle 240ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Accessibility: Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;

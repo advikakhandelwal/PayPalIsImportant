@@ -67,10 +67,10 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6">
         {/* Header */}
         <div className="text-center space-y-3">
-          <div className="w-14 h-14 rounded-2xl bg-[#0070E0] flex items-center justify-center text-white mx-auto shadow-md">
+          <div className="w-14 h-14 rounded-2xl bg-[#087EAA] flex items-center justify-center text-white mx-auto shadow-md">
             <ShieldCheck className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-extrabold text-[#003087] tracking-tight">
+          <h1 className="text-3xl font-extrabold text-[#073B68] tracking-tight">
             Log In to TrustPay
           </h1>
           <p className="text-sm text-gray-500">
@@ -91,7 +91,7 @@ export default function LoginPage() {
                     onClick={() => setSelectedRole("FREELANCER")}
                     className={`flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-full transition-all cursor-pointer ${
                       selectedRole === "FREELANCER"
-                        ? "bg-white text-[#0070E0] shadow-sm ring-1 ring-gray-200"
+                        ? "bg-white text-[#087EAA] shadow-sm ring-1 ring-gray-200"
                         : "text-gray-500 hover:text-gray-900"
                     }`}
                   >
@@ -103,7 +103,7 @@ export default function LoginPage() {
                     onClick={() => setSelectedRole("CLIENT")}
                     className={`flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-full transition-all cursor-pointer ${
                       selectedRole === "CLIENT"
-                        ? "bg-white text-[#003087] shadow-sm ring-1 ring-gray-200"
+                        ? "bg-white text-[#073B68] shadow-sm ring-1 ring-gray-200"
                         : "text-gray-500 hover:text-gray-900"
                     }`}
                   >
@@ -174,7 +174,7 @@ export default function LoginPage() {
 
           <CardFooter className="justify-center border-t border-gray-100 py-4 text-xs text-gray-500 bg-gray-50/50">
             Don&apos;t have an account?{" "}
-            <Link href="/auth/signup" className="text-[#0070E0] font-bold ml-1 hover:underline">
+            <Link href="/auth/signup" className="text-[#087EAA] font-bold ml-1 hover:underline">
               Sign Up
             </Link>
           </CardFooter>

@@ -468,7 +468,7 @@ function FreelancerDashboardContent() {
       {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-white border border-slate-200 shadow-xs">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-blue-50 text-paypal-dark flex items-center justify-center font-bold text-lg">
+          <div className="w-12 h-12 rounded-xl bg-blue-50 text-[#073B68] flex items-center justify-center font-bold text-lg">
             {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : "F"}
           </div>
           <div>
@@ -496,9 +496,7 @@ function FreelancerDashboardContent() {
           <button
             onClick={() => setActiveTab("overview")}
             className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              activeTab === "overview"
-                ? "bg-paypal-blue text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              activeTab === "overview" ? "bg-[#073B68] text-white shadow-[0_2px_8px_rgba(7,59,104,0.25)]" : "text-[#4A5D73] hover:text-[#073B68] hover:bg-[#EAF3FA]"
             }`}
           >
             <LayoutDashboard className="w-3.5 h-3.5" />
@@ -508,9 +506,7 @@ function FreelancerDashboardContent() {
           <button
             onClick={() => setActiveTab("projects")}
             className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              activeTab === "projects"
-                ? "bg-paypal-blue text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              activeTab === "projects" ? "bg-[#073B68] text-white shadow-[0_2px_8px_rgba(7,59,104,0.25)]" : "text-[#4A5D73] hover:text-[#073B68] hover:bg-[#EAF3FA]"
             }`}
           >
             <Search className="w-3.5 h-3.5" />
@@ -520,9 +516,7 @@ function FreelancerDashboardContent() {
           <button
             onClick={() => setActiveTab("applications")}
             className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              activeTab === "applications"
-                ? "bg-paypal-blue text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              activeTab === "applications" ? "bg-[#073B68] text-white shadow-[0_2px_8px_rgba(7,59,104,0.25)]" : "text-[#4A5D73] hover:text-[#073B68] hover:bg-[#EAF3FA]"
             }`}
           >
             <FileCheck className="w-3.5 h-3.5" />
@@ -532,9 +526,7 @@ function FreelancerDashboardContent() {
           <button
             onClick={() => setActiveTab("contracts")}
             className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              activeTab === "contracts"
-                ? "bg-paypal-blue text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              activeTab === "contracts" ? "bg-[#073B68] text-white shadow-[0_2px_8px_rgba(7,59,104,0.25)]" : "text-[#4A5D73] hover:text-[#073B68] hover:bg-[#EAF3FA]"
             }`}
           >
             <Lock className="w-3.5 h-3.5" />
@@ -544,9 +536,7 @@ function FreelancerDashboardContent() {
           <button
             onClick={() => setActiveTab("profile")}
             className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              activeTab === "profile"
-                ? "bg-paypal-blue text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              activeTab === "profile" ? "bg-[#073B68] text-white shadow-[0_2px_8px_rgba(7,59,104,0.25)]" : "text-[#4A5D73] hover:text-[#073B68] hover:bg-[#EAF3FA]"
             }`}
           >
             <User className="w-3.5 h-3.5" />
@@ -556,9 +546,7 @@ function FreelancerDashboardContent() {
           <button
             onClick={() => setActiveTab("scorecard")}
             className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              activeTab === "scorecard"
-                ? "bg-paypal-blue text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              activeTab === "scorecard" ? "bg-[#073B68] text-white shadow-[0_2px_8px_rgba(7,59,104,0.25)]" : "text-[#4A5D73] hover:text-[#073B68] hover:bg-[#EAF3FA]"
             }`}
           >
             <Award className="w-3.5 h-3.5" />
@@ -582,7 +570,7 @@ function FreelancerDashboardContent() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <Card className="p-4 space-y-1">
               <span className="text-xs text-slate-500 block">Trust Rating</span>
-              <span className="text-xl font-bold text-slate-900">
+              <span className="text-xl font-extrabold text-[#073B68] tabular-nums">
                 {isUnrated ? "Pending (0/5)" : `${currentUser.trustScorecard.rating} ★`}
               </span>
               <span className="text-[11px] text-slate-400 block">
@@ -592,7 +580,7 @@ function FreelancerDashboardContent() {
 
             <Card className="p-4 space-y-1">
               <span className="text-xs text-slate-500 block">On-Time Delivery</span>
-              <span className="text-xl font-bold text-emerald-600">
+              <span className="text-xl font-extrabold text-[#16A6A1] tabular-nums">
                 {isUnrated ? "N/A" : `${currentUser.trustScorecard.onTimeDeliveryRate}%`}
               </span>
               <span className="text-[11px] text-slate-400 block">
@@ -602,7 +590,7 @@ function FreelancerDashboardContent() {
 
             <Card className="p-4 space-y-1">
               <span className="text-xs text-slate-500 block">Compliance Score</span>
-              <span className="text-xl font-bold text-paypal-blue">
+              <span className="text-xl font-bold text-[#087EAA]">
                 {isUnrated ? "N/A" : `${currentUser.trustScorecard.complianceScore}%`}
               </span>
               <span className="text-[11px] text-slate-400 block">
@@ -697,7 +685,7 @@ function FreelancerDashboardContent() {
                 variant="ghost"
                 size="sm"
                 onClick={handleResetFilters}
-                className="text-xs text-paypal-blue hover:text-paypal-dark self-start sm:self-auto rounded-full"
+                className="text-xs text-[#087EAA] hover:text-[#073B68] self-start sm:self-auto rounded-full"
               >
                 <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
                 Reset All Filters
@@ -863,7 +851,7 @@ function FreelancerDashboardContent() {
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
               <span className="font-semibold text-slate-500">Active filters:</span>
               {searchQuery && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-[#087EAA] font-medium border border-blue-200">
                   Search: &ldquo;{searchQuery}&rdquo;
                   <button onClick={() => setSearchQuery("")} className="hover:text-blue-800">
                     <X className="w-3 h-3" />
@@ -871,7 +859,7 @@ function FreelancerDashboardContent() {
                 </span>
               )}
               {selectedDomain !== "ALL" && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-[#087EAA] font-medium border border-blue-200">
                   Domain: {selectedDomain}
                   <button onClick={() => setSelectedDomain("ALL")} className="hover:text-blue-800">
                     <X className="w-3 h-3" />
@@ -879,7 +867,7 @@ function FreelancerDashboardContent() {
                 </span>
               )}
               {selectedSkill !== "ALL" && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-[#087EAA] font-medium border border-blue-200">
                   Skill: {selectedSkill}
                   <button onClick={() => setSelectedSkill("ALL")} className="hover:text-blue-800">
                     <X className="w-3 h-3" />
@@ -887,7 +875,7 @@ function FreelancerDashboardContent() {
                 </span>
               )}
               {selectedExperience !== "ALL" && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-[#087EAA] font-medium border border-blue-200">
                   Level: {selectedExperience}
                   <button onClick={() => setSelectedExperience("ALL")} className="hover:text-blue-800">
                     <X className="w-3 h-3" />
@@ -895,7 +883,7 @@ function FreelancerDashboardContent() {
                 </span>
               )}
               {(minBudget || maxBudget) && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-[#087EAA] font-medium border border-blue-200">
                   Budget: ${minBudget || "0"} - ${maxBudget || "∞"}
                   <button
                     onClick={() => {
@@ -942,7 +930,7 @@ function FreelancerDashboardContent() {
                       )}
                     </div>
                     <div className="text-right whitespace-nowrap">
-                      <span className="text-base font-extrabold text-paypal-dark block leading-none">
+                      <span className="text-base font-extrabold text-[#073B68] block leading-none">
                         {formatCurrency(p.totalBudget, p.currency)}
                       </span>
                       <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">
@@ -954,7 +942,7 @@ function FreelancerDashboardContent() {
                   {/* Project Title */}
                   <h3
                     onClick={() => setSelectedProjectForDetails(p)}
-                    className="font-bold text-base text-slate-900 hover:text-paypal-blue cursor-pointer transition-colors line-clamp-1"
+                    className="font-bold text-base text-slate-900 hover:text-[#087EAA] cursor-pointer transition-colors line-clamp-1"
                   >
                     {p.title}
                   </h3>
@@ -967,7 +955,7 @@ function FreelancerDashboardContent() {
                     <span>•</span>
                     {p.clientLocation?.city ? (
                       <span className="inline-flex items-center gap-1 text-slate-600 font-medium">
-                        <MapPin className="w-3.5 h-3.5 text-paypal-blue" />
+                        <MapPin className="w-3.5 h-3.5 text-[#087EAA]" />
                         {p.clientLocation.city}, {p.clientLocation.state}, {p.clientLocation.country}
                         <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                           {p.clientLocation.isAddressVerified ? "Verified Address" : "Address Provided"}
@@ -1113,7 +1101,7 @@ function FreelancerDashboardContent() {
                     </div>
                     <div className="text-right">
                       <span className="text-xs text-slate-500 block">Your Bid</span>
-                      <span className="text-base font-bold text-paypal-dark">
+                      <span className="text-base font-bold text-[#073B68]">
                         {formatCurrency(app.bidAmount, app.currency)}
                       </span>
                     </div>
@@ -1232,7 +1220,7 @@ function FreelancerDashboardContent() {
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                   <div className="text-right">
                     <span className="text-xs text-slate-500">Contract Value</span>
-                    <p className="text-xl font-bold text-paypal-dark">
+                    <p className="text-xl font-bold text-[#073B68]">
                       {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
                     </p>
                   </div>
@@ -1263,7 +1251,7 @@ function FreelancerDashboardContent() {
                 </div>
                 <div>
                   <span className="text-xs text-slate-500 block">Settlement Rate</span>
-                  <span className="text-lg font-bold text-paypal-blue">
+                  <span className="text-lg font-bold text-[#087EAA]">
                     {Math.round((selectedContractForTab.releasedAmount / selectedContractForTab.totalBudget) * 100)}%
                   </span>
                 </div>
@@ -1283,14 +1271,16 @@ function FreelancerDashboardContent() {
                     return (
                       <div
                         key={ms.id}
-                        className={`p-5 rounded-xl border transition-all ${
+                        className={`p-5 rounded-2xl border-r border-t border-b transition-all ${
                           ms.status === "ACTIVE"
-                            ? "border-paypal-blue bg-blue-50/10 ring-1 ring-paypal-blue"
+                            ? "border-l-4 border-l-[#087EAA] border-blue-200 bg-blue-50/10 shadow-xs"
                             : ms.status === "RELEASED"
-                            ? "border-emerald-200 bg-emerald-50/20"
+                            ? "border-l-4 border-l-[#16A6A1] border-emerald-200 bg-emerald-50/20"
                             : ms.status === "IN_REVIEW"
-                            ? "border-purple-200 bg-purple-50/20"
-                            : "border-slate-200 bg-white"
+                            ? "border-l-4 border-l-purple-500 border-purple-200 bg-purple-50/20"
+                            : ms.status === "REVISION_REQUESTED"
+                            ? "border-l-4 border-l-[#F0A44B] border-amber-200 bg-amber-50/15"
+                            : "border-l-4 border-l-gray-300 border-slate-200 bg-white"
                         }`}
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
@@ -1318,7 +1308,7 @@ function FreelancerDashboardContent() {
                         {ms.subtasks && ms.subtasks.length > 0 && (
                           <div className="mb-3.5 p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-bold text-paypal-dark flex items-center gap-1.5">
+                              <span className="font-bold text-[#073B68] flex items-center gap-1.5">
                                 <Sparkles className="w-3.5 h-3.5 text-purple-600" />
                                 Internal Subtask Division ({completedSubtasksCount}/{totalSubtasksCount} Completed)
                               </span>
@@ -1341,7 +1331,7 @@ function FreelancerDashboardContent() {
                                 >
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5">
-                                      <span className="font-extrabold text-paypal-dark text-[10px]">{st.stepNumber}</span>
+                                      <span className="font-extrabold text-[#073B68] text-[10px]">{st.stepNumber}</span>
                                       <span className="font-medium text-slate-800 truncate">{st.title}</span>
                                     </div>
                                     <span className="text-[10px] text-slate-500 block mt-0.5">
@@ -1402,7 +1392,7 @@ function FreelancerDashboardContent() {
                               <span className="font-semibold text-slate-700">Submitted Deliverable:</span>
                               <span className="text-slate-400 text-[11px]">{formatDate(ms.submission.submittedAt)}</span>
                             </div>
-                            <p className="text-paypal-blue font-mono text-[11px] break-all">{ms.submission.submissionUrl}</p>
+                            <p className="text-[#087EAA] font-mono text-[11px] break-all">{ms.submission.submissionUrl}</p>
                             {ms.submission.notes && <p className="text-slate-500 text-[11px]">{ms.submission.notes}</p>}
 
                             {ms.submission.aiVerificationReport && (
@@ -1476,7 +1466,7 @@ function FreelancerDashboardContent() {
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-paypal-blue text-white flex items-center justify-center font-bold text-lg">
+                <div className="w-12 h-12 rounded-xl bg-[#087EAA] text-white flex items-center justify-center font-bold text-lg">
                   {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : "F"}
                 </div>
                 <div>
@@ -1500,7 +1490,7 @@ function FreelancerDashboardContent() {
                     <div className="flex flex-wrap gap-1.5">
                       {currentUser.skills && currentUser.skills.length > 0 ? (
                         currentUser.skills.map((s, idx) => (
-                          <span key={idx} className="px-2.5 py-1 rounded-md bg-blue-50 text-paypal-dark font-medium border border-blue-200">
+                          <span key={idx} className="px-2.5 py-1 rounded-md bg-blue-50 text-[#073B68] font-medium border border-blue-200">
                             {s}
                           </span>
                         ))
@@ -1519,7 +1509,7 @@ function FreelancerDashboardContent() {
                           href={link}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 text-paypal-blue hover:underline font-mono"
+                          className="inline-flex items-center gap-1.5 text-[#087EAA] hover:underline font-mono"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
                           {link}
@@ -1576,8 +1566,8 @@ function FreelancerDashboardContent() {
             <CardHeader className="bg-slate-50 border-b border-slate-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-paypal-blue flex items-center justify-center font-bold">
-                    <FileCheck className="w-5 h-5 text-paypal-blue" />
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#087EAA] flex items-center justify-center font-bold">
+                    <FileCheck className="w-5 h-5 text-[#087EAA]" />
                   </div>
                   <div>
                     <CardTitle className="text-base text-slate-900">CV &amp; Verified Professional Resume</CardTitle>
@@ -1604,7 +1594,7 @@ function FreelancerDashboardContent() {
                 <div className="space-y-4 text-xs">
                   <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-paypal-blue">
+                      <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#087EAA]">
                         <FileCheck className="w-5 h-5" />
                       </div>
                       <div>
@@ -1623,7 +1613,7 @@ function FreelancerDashboardContent() {
                         onClick={() => handleUploadCV("Vachan_Singh_FullStack_Updated_2026.pdf", 165000)}
                         className="text-xs"
                       >
-                        <UploadCloud className="w-3.5 h-3.5 mr-1 text-paypal-blue" />
+                        <UploadCloud className="w-3.5 h-3.5 mr-1 text-[#087EAA]" />
                         Replace / Update CV
                       </Button>
                     </div>
@@ -1734,7 +1724,7 @@ function FreelancerDashboardContent() {
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
                 Specification Compliance
               </span>
-              <div className="text-4xl font-extrabold text-paypal-blue">
+              <div className="text-4xl font-extrabold text-[#087EAA]">
                 {isUnrated ? "N/A" : `${currentUser.trustScorecard.complianceScore}%`}
               </div>
               <p className="text-xs text-slate-400">Advisory AI verification pass rate</p>
@@ -1830,7 +1820,7 @@ function FreelancerDashboardContent() {
               />
 
               <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-lg text-xs text-slate-600 space-y-1">
-                <span className="font-semibold text-paypal-dark block">PayPal Escrow Guarantee:</span>
+                <span className="font-semibold text-[#073B68] block">PayPal Escrow Guarantee:</span>
                 <p className="text-[11px] leading-tight">
                   If selected, project funds are locked upfront in escrow. Payment is released step-by-step as milestones are accepted.
                 </p>
@@ -2020,7 +2010,7 @@ function FreelancerDashboardContent() {
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
                     Total Escrow Budget
                   </span>
-                  <span className="text-xl font-extrabold text-paypal-dark block mt-0.5">
+                  <span className="text-xl font-extrabold text-[#073B68] block mt-0.5">
                     {formatCurrency(selectedProjectForDetails.totalBudget, selectedProjectForDetails.currency)}
                   </span>
                   <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 mt-0.5">
@@ -2117,7 +2107,7 @@ function FreelancerDashboardContent() {
                           </span>
                         </div>
                         <div className="text-right whitespace-nowrap">
-                          <span className="font-extrabold text-xs sm:text-sm text-paypal-dark">
+                          <span className="font-extrabold text-xs sm:text-sm text-[#073B68]">
                             {formatCurrency(ms.paymentAmount, ms.currency)}
                           </span>
                           <span className="text-[10px] text-slate-400 block">

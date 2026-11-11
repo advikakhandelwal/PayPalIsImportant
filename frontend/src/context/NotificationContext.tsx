@@ -145,7 +145,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         if (n.isDismissed) return false;
         const matchesUser = n.userId === "ALL" || n.userId === userId;
         const matchesRole = n.userRole === "ALL" || n.userRole === role;
-        return matchesUser || matchesRole;
+        return matchesUser && matchesRole;
       });
     },
     [notifications]

@@ -6,18 +6,18 @@ import { ShieldCheck, Lock, Twitter, Linkedin, Github } from "lucide-react";
 
 export const Footer: React.FC = () => {
   return (
-    <footer className="bg-white border-t border-gray-100 pt-20 pb-10 mt-auto">
+    <footer className="bg-[#052847] text-white border-t border-white/10 pt-20 pb-10 mt-auto">
       <div className="max-w-7xl mx-auto px-6">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-12 mb-16">
           {/* Brand Info */}
-          <div className="md:col-span-2">
+          <div className="md:col-span-2 gsap-footer-col">
             <Link href="/" className="flex items-center gap-2 mb-6 group inline-block">
-              <div className="w-8 h-8 bg-[#0070E0] rounded-lg flex items-center justify-center text-white text-lg shadow-xs group-hover:scale-105 transition-transform">
+              <div className="w-8 h-8 bg-[#087EAA] rounded-lg flex items-center justify-center text-white text-lg shadow-xs group-hover:scale-105 transition-transform">
                 <ShieldCheck className="w-5 h-5 text-white" />
               </div>
-              <span className="text-xl font-extrabold tracking-tighter text-[#003087]">TrustPay</span>
+              <span className="text-xl font-extrabold tracking-tighter text-white">TrustPay</span>
             </Link>
-            <p className="text-gray-500 text-sm max-w-xs leading-relaxed mb-8">
+            <p className="text-blue-100/70 text-sm max-w-xs leading-relaxed mb-8">
               Autonomous milestone escrow marketplace designed to bridge companies with verified freelancers and creators with algorithmic proof-of-work.
             </p>
             <div className="flex gap-4">
@@ -27,7 +27,7 @@ export const Footer: React.FC = () => {
                 rel="noreferrer"
                 id="social-tw"
                 aria-label="Twitter"
-                className="w-10 h-10 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-400 hover:text-[#0070E0] hover:bg-blue-50 transition-colors"
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-blue-200 hover:text-white hover:bg-white/10 transition-colors"
               >
                 <Twitter className="w-4 h-4" />
               </a>
@@ -55,26 +55,26 @@ export const Footer: React.FC = () => {
           </div>
 
           {/* Col 1: Marketplace */}
-          <div>
-            <h5 className="text-[#003087] font-bold text-sm mb-6 uppercase tracking-wider">Marketplace</h5>
+          <div className="gsap-footer-col">
+            <h5 className="text-white font-bold text-sm mb-6 uppercase tracking-wider">Marketplace</h5>
             <ul className="space-y-4">
               <li>
-                <Link href="/freelancer/dashboard?tab=browse" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
+                <Link href="/freelancer/dashboard?tab=browse" className="text-blue-100/70 hover:text-[#16A6A1] text-sm transition-colors">
                   Browse Projects
                 </Link>
               </li>
               <li>
-                <Link href="/client/dashboard?tab=post" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
+                <Link href="/client/dashboard?tab=post" className="text-blue-100/70 hover:text-[#16A6A1] text-sm transition-colors">
                   Post a Project
                 </Link>
               </li>
               <li>
-                <a href="#about" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
+                <a href="#about" className="text-blue-100/70 hover:text-[#16A6A1] text-sm transition-colors">
                   Portals Overview
                 </a>
               </li>
               <li>
-                <a href="#escrow" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
+                <a href="#escrow" className="text-blue-100/70 hover:text-[#16A6A1] text-sm transition-colors">
                   Escrow Services
                 </a>
               </li>
@@ -82,26 +82,26 @@ export const Footer: React.FC = () => {
           </div>
 
           {/* Col 2: Company */}
-          <div>
-            <h5 className="text-[#003087] font-bold text-sm mb-6 uppercase tracking-wider">Company</h5>
+          <div className="gsap-footer-col">
+            <h5 className="text-white font-bold text-sm mb-6 uppercase tracking-wider">Company</h5>
             <ul className="space-y-4">
               <li>
-                <a href="#about" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
+                <a href="#about" className="text-blue-100/70 hover:text-[#16A6A1] text-sm transition-colors">
                   About Us
                 </a>
               </li>
               <li>
-                <a href="#how-it-works" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
+                <a href="#how-it-works" className="text-blue-100/70 hover:text-[#16A6A1] text-sm transition-colors">
                   How It Works
                 </a>
               </li>
               <li>
-                <a href="#features" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
+                <a href="#features" className="text-blue-100/70 hover:text-[#16A6A1] text-sm transition-colors">
                   Capabilities
                 </a>
               </li>
               <li>
-                <Link href="/auth/signup" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
+                <Link href="/auth/signup" className="text-blue-100/70 hover:text-[#16A6A1] text-sm transition-colors">
                   Join Platform
                 </Link>
               </li>
@@ -109,21 +109,21 @@ export const Footer: React.FC = () => {
           </div>
 
           {/* Col 3: Resources */}
-          <div>
-            <h5 className="text-[#003087] font-bold text-sm mb-6 uppercase tracking-wider">Resources</h5>
+          <div className="gsap-footer-col">
+            <h5 className="text-white font-bold text-sm mb-6 uppercase tracking-wider">Resources</h5>
             <ul className="space-y-4">
               <li>
-                <a href="#features" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
+                <a href="#features" className="text-blue-100/70 hover:text-[#16A6A1] text-sm transition-colors">
                   AI Verification Specs
                 </a>
               </li>
               <li>
-                <a href="#escrow" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
+                <a href="#escrow" className="text-blue-100/70 hover:text-[#16A6A1] text-sm transition-colors">
                   Milestone Protocol
                 </a>
               </li>
               <li>
-                <Link href="/auth/login" className="text-gray-500 hover:text-[#0070E0] text-sm transition-colors">
+                <Link href="/auth/login" className="text-blue-100/70 hover:text-[#16A6A1] text-sm transition-colors">
                   Account Sign In
                 </Link>
               </li>

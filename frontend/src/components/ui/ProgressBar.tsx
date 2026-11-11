@@ -21,21 +21,21 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   const percentage = Math.min(Math.max(Math.round((value / max) * 100), 0), 100);
 
   const barVariants = {
-    paypal: "bg-paypal-blue",
-    success: "bg-emerald-500",
-    warning: "bg-amber-500",
-    inReview: "bg-purple-500",
+    paypal: "bg-gradient-to-r from-[#087EAA] to-[#16A6A1]",
+    success: "bg-[#16A6A1]",
+    warning: "bg-[#F0A44B]",
+    inReview: "bg-gradient-to-r from-[#087EAA] to-[#8B5CF6]",
   };
 
   return (
     <div className={cn("w-full space-y-1.5", className)} {...props}>
       {(label || showPercentage) && (
-        <div className="flex justify-between items-center text-xs font-medium text-slate-600">
+        <div className="flex justify-between items-center text-xs font-semibold text-slate-700">
           <span>{label}</span>
-          {showPercentage && <span>{percentage}%</span>}
+          {showPercentage && <span className="tabular-nums font-bold text-[#073B68]">{percentage}%</span>}
         </div>
       )}
-      <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+      <div className="w-full h-2.5 bg-[#EAF2FA] rounded-full overflow-hidden border border-[#D5E4F3]">
         <div
           className={cn("h-full transition-all duration-500 ease-out rounded-full", barVariants[variant])}
           style={{ width: `${percentage}%` }}

@@ -54,7 +54,7 @@ export default function ClientOnboardingPage() {
       <div className="w-full max-w-xl space-y-6">
         {/* Step Header */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-paypal-dark text-xs font-semibold">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-[#073B68] text-xs font-semibold">
             <Building className="w-3.5 h-3.5" />
             <span>Step 2 of 2 • Client Organization Setup</span>
           </div>
@@ -104,7 +104,7 @@ export default function ClientOnboardingPage() {
                 <select
                   value={industry}
                   onChange={(e) => setIndustry(e.target.value)}
-                  className="w-full h-10 px-3.5 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paypal-blue"
+                  className="w-full h-10 px-3.5 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#087EAA]"
                 >
                   <option value="Fintech & Autonomous Commerce">Fintech & Autonomous Commerce</option>
                   <option value="Software & SaaS">Software & SaaS</option>

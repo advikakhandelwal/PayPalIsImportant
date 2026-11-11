@@ -1,5 +1,8 @@
 "use client";
 
+import { useNotifications } from "@/context/NotificationContext";
+import { formatCurrency } from "@/lib/utils";
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { Project, EscrowContract, Application, MilestoneStatus, DeliverableSubmission, Milestone, EscrowStatus, RevisionRequest } from "@/types";
 import { SAMPLE_PROJECTS, SAMPLE_ACTIVE_CONTRACT, SAMPLE_APPLICATIONS } from "@/lib/mockData";
@@ -72,6 +75,7 @@ const MarketplaceContext = createContext<MarketplaceContextType | undefined>(und
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
 export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { addNotification } = useNotifications();
   // ── Use deterministic seed data for SSR and the first client render ───────
   // localStorage is read only after client mounting to prevent hydration mismatch.
   const [projects, setProjects] = useState<Project[]>(SAMPLE_PROJECTS);
@@ -134,7 +138,23 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
       createdAt: new Date().toISOString(),
     };
     setApplications((prev) => [...prev, newApp]);
-  }, []);
+
+    setProjects((prevProjects) => {
+      const targetProj = prevProjects.find((p) => p.id === appData.projectId);
+      if (targetProj) {
+        addNotification({
+          userId: targetProj.clientId,
+          userRole: "CLIENT",
+          event: "NEW_APPLICATION",
+          title: "New Application Received",
+          description: `${appData.freelancerName} applied for "${targetProj.title}" (${formatCurrency(appData.bidAmount, appData.currency)}).`,
+          linkHref: "/client/dashboard",
+          entityId: targetProj.id,
+        });
+      }
+      return prevProjects;
+    });
+  }, [addNotification]);
 
   // ── Accept application & create demo contract ─────────────────────────────
   /**
@@ -187,6 +207,16 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
               milestones: contractMilestones,
               createdAt: new Date().toISOString(),
             };
+
+            addNotification({
+              userId: app.freelancerId,
+              userRole: "FREELANCER",
+              event: "APPLICATION_ACCEPTED",
+              title: "Proposal Accepted & Contract Active",
+              description: `Your proposal for "${project.title}" was accepted! Escrow contract is now active.`,
+              linkHref: "/freelancer/dashboard",
+              entityId: newContract.id,
+            });
 
             return [newContract, ...prevContracts];
           });
@@ -266,8 +296,31 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
           };
         })
       );
+
+      // Trigger notification to client
+      setTimeout(() => {
+        setContracts((curr) => {
+          const c = curr.find((ct) => ct.id === contractId);
+          const ms = c?.milestones.find((m) => m.id === milestoneId);
+          if (c && ms) {
+            const isResub = (ms.revisionCount || 0) > 0;
+            addNotification({
+              userId: c.clientId,
+              userRole: "CLIENT",
+              event: isResub ? "DELIVERABLE_RESUBMITTED" : "DELIVERABLE_SUBMITTED",
+              title: isResub
+                ? `Revised Deliverable (Rev ${ms.revisionCount}/3) Submitted`
+                : "Deliverable Ready for Review",
+              description: `${c.freelancerName} submitted work for "${ms.title}" on "${c.projectTitle}".`,
+              linkHref: "/client/dashboard",
+              entityId: c.id,
+            });
+          }
+          return curr;
+        });
+      }, 50);
     },
-    []
+    [addNotification]
   );
 
   // ── Milestone approval ────────────────────────────────────────────────────
@@ -317,6 +370,16 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
         const newReleased = contract.releasedAmount + releasedAmount;
         const allReleased = updatedMilestones.every((m) => m.status === "RELEASED");
 
+        addNotification({
+          userId: contract.freelancerId,
+          userRole: "FREELANCER",
+          event: "MILESTONE_APPROVED",
+          title: `Milestone Approved (${formatCurrency(releasedAmount, contract.currency)})`,
+          description: `Step "${target?.title || 'Milestone'}" on "${contract.projectTitle}" approved! Escrow payment released to your balance.`,
+          linkHref: "/freelancer/dashboard",
+          entityId: contract.id,
+        });
+
         return {
           ...contract,
           releasedAmount: newReleased,
@@ -326,7 +389,7 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
         };
       })
     );
-  }, []);
+  }, [addNotification]);
 
   // ── Milestone revision request ────────────────────────────────────────────
   const requestMilestoneRevision = useCallback(
@@ -403,6 +466,16 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 }
               }
 
+              addNotification({
+                userId: contract.freelancerId,
+                userRole: "FREELANCER",
+                event: "REVISION_REQUESTED",
+                title: `Revision Requested (${newCount}/3)`,
+                description: `Client requested revisions for "${ms.title}" on "${contract.projectTitle}".`,
+                linkHref: "/freelancer/dashboard",
+                entityId: contract.id,
+              });
+
               return {
                 ...ms,
                 status: "REVISION_REQUESTED" as MilestoneStatus,
@@ -417,7 +490,7 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
         })
       );
     },
-    []
+    [addNotification]
   );
 
   const updateSubtaskStatus = useCallback(

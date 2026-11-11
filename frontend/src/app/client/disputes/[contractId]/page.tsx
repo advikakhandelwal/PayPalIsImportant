@@ -88,19 +88,26 @@ export default function DisputeWorkspacePage() {
   if (!contract) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <Card className="max-w-md w-full p-8 text-center bg-white rounded-3xl border-gray-100 shadow-md">
+        <Card className="max-w-md w-full p-8 text-center bg-white rounded-3xl border-[#E5ECF6] shadow-md">
           <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-gray-900">Contract Not Found</h2>
           <p className="text-xs text-gray-500 mt-2 mb-6">
             The escrow contract ID &quot;{contractId}&quot; does not exist or has expired in demo state.
           </p>
-          <Link href="/client/dashboard" className="inline-flex items-center gap-2 text-xs font-bold text-[#0070E0]">
+          <Link href="/client/dashboard" className="inline-flex items-center gap-2 text-xs font-bold text-[#087EAA]">
             <ArrowLeft className="w-4 h-4" /> Return to Dashboard
           </Link>
         </Card>
       </div>
     );
   }
+
+  const isContractCompleted =
+    contract.escrowStatus === "COMPLETED" ||
+    (contract.milestones.length > 0 &&
+      contract.milestones.every(
+        (m) => m.status === "RELEASED" || m.submission !== undefined || m.status === "IN_REVIEW" || m.status === "REVISION_REQUESTED"
+      ));
 
   // Handlers
   const handleInitiateDispute = () => {
@@ -236,7 +243,7 @@ export default function DisputeWorkspacePage() {
         <div className="flex items-center justify-between">
           <Link
             href={dashboardHref}
-            className="inline-flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-[#0070E0] transition-colors"
+            className="inline-flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-[#087EAA] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Dashboard
@@ -248,7 +255,7 @@ export default function DisputeWorkspacePage() {
         </div>
 
         {/* Contract Header Card */}
-        <Card className="border-gray-100 bg-white rounded-3xl p-6 sm:p-8 shadow-xs">
+        <Card className="border-[#E5ECF6] bg-white rounded-3xl p-6 sm:p-8 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -257,7 +264,7 @@ export default function DisputeWorkspacePage() {
                 </span>
                 <span className="text-xs text-gray-400 font-mono">#{contract.id}</span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-[#003087] tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-[#073B68] tracking-tight">
                 {contract.projectTitle}
               </h1>
               <p className="text-xs text-gray-500 mt-1">
@@ -268,7 +275,7 @@ export default function DisputeWorkspacePage() {
 
             <div className="text-left sm:text-right shrink-0">
               <span className="text-xs text-gray-400 block font-medium">Total Escrow Value</span>
-              <span className="text-2xl font-extrabold text-[#003087]">
+              <span className="text-2xl font-extrabold text-[#073B68] tabular-nums">
                 {formatCurrency(contract.totalBudget, contract.currency)}
               </span>
             </div>
@@ -276,12 +283,46 @@ export default function DisputeWorkspacePage() {
         </Card>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            CASE A: NO DISPUTE YET -> INITIATION FORM
+            CASE A: NO DISPUTE YET -> INITIATION FORM OR STATUS NOTICE
         ═══════════════════════════════════════════════════════════════════ */}
-        {!dispute && (
+        {!dispute && !isClient && (
+          <Card className="border-[#E5ECF6] bg-white rounded-3xl p-8 text-center shadow-xs space-y-4 animate-fade-in">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#087EAA] flex items-center justify-center mx-auto">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <h2 className="text-lg font-bold text-gray-900">No Active Dispute on This Contract</h2>
+            <p className="text-xs text-gray-500 max-w-lg mx-auto">
+              Under TrustPay protocol, escrow disputes can be initiated by the hiring client upon project completion if deliverables do not meet agreed specifications. Once initiated, you will be notified to review the AI advisory recommendation and submit counteroffers here.
+            </p>
+            <div>
+              <Link href="/freelancer/dashboard?tab=contracts" className="inline-flex items-center gap-1.5 text-xs font-bold text-[#087EAA] hover:underline">
+                <ArrowLeft className="w-4 h-4" /> Return to Contract Workspace
+              </Link>
+            </div>
+          </Card>
+        )}
+
+        {!dispute && isClient && !isContractCompleted && (
+          <Card className="border-[#FCDDB5] bg-[#FEF6ED]/40 rounded-3xl p-8 text-center shadow-xs space-y-4 animate-fade-in">
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h2 className="text-lg font-bold text-gray-900">Dispute Ineligible: Project Still In Progress</h2>
+            <p className="text-xs text-gray-600 max-w-lg mx-auto">
+              In accordance with TrustPay AI Escrow Protocol, disputes may only be raised after the entire project has been completed and final deliverables submitted. Active milestones should be reviewed using the Milestone Revision Request workflow (up to 3 revisions per milestone) or allowed to proceed to completion.
+            </p>
+            <div>
+              <Link href="/client/dashboard?tab=contracts" className="inline-flex items-center gap-1.5 text-xs font-bold text-[#087EAA] hover:underline">
+                <ArrowLeft className="w-4 h-4" /> Back to Milestone Review
+              </Link>
+            </div>
+          </Card>
+        )}
+
+        {!dispute && isClient && isContractCompleted && (
           <div className="space-y-6 animate-fade-in">
-            <Card className="border-gray-100 bg-white rounded-3xl p-6 sm:p-8 shadow-xs space-y-6">
-              <div className="border-b border-gray-100 pb-4">
+            <Card className="border-[#E5ECF6] bg-white rounded-3xl p-6 sm:p-8 shadow-xs space-y-6">
+              <div className="border-b border-[#E5ECF6] pb-4">
                 <div className="flex items-center gap-2 text-amber-600 mb-1">
                   <ShieldAlert className="w-5 h-5" />
                   <h2 className="text-lg font-bold text-gray-900">Initiate Escrow Dispute &amp; AI Analysis</h2>
@@ -298,7 +339,7 @@ export default function DisputeWorkspacePage() {
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value as DisputeCategory)}
-                    className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                    className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#087EAA]"
                   >
                     <option value="QUALITY_DEFICIENCY">Quality Deficiency &amp; Bug Density</option>
                     <option value="MISSED_DEADLINE">Missed Milestone Deadline</option>
@@ -314,7 +355,7 @@ export default function DisputeWorkspacePage() {
                   <select
                     value={selectedMilestoneId}
                     onChange={(e) => setSelectedMilestoneId(e.target.value)}
-                    className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                    className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#087EAA]"
                   >
                     <option value="">Entire Project / Multiple Milestones</option>
                     {contract.milestones.map((m) => (
@@ -396,7 +437,7 @@ export default function DisputeWorkspacePage() {
             {/* Confirmation Modal */}
             {showConfirmModal && (
               <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-                <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-100 space-y-4">
+                <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-[#E5ECF6] space-y-4">
                   <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
                     <ShieldAlert className="w-6 h-6" />
                   </div>
@@ -425,10 +466,10 @@ export default function DisputeWorkspacePage() {
         {dispute && (
           <div className="space-y-6 animate-fade-in">
             {/* Status Stepper Banner */}
-            <div className="bg-white border border-gray-100 rounded-3xl p-6 shadow-xs">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100">
+            <div className="bg-white border border-[#E5ECF6] rounded-3xl p-6 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#E5ECF6]">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0070E0] flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#087EAA] flex items-center justify-center shrink-0">
                     <ShieldCheck className="w-5 h-5" />
                   </div>
                   <div>
@@ -459,18 +500,18 @@ export default function DisputeWorkspacePage() {
 
               {/* Progress Steps */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-4 text-xs font-semibold">
-                <div className="p-2.5 rounded-xl bg-blue-50 text-[#0070E0] flex items-center gap-2">
+                <div className="p-2.5 rounded-xl bg-blue-50 text-[#087EAA] flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                   <span>1. Dispute Lodged</span>
                 </div>
                 <div className={`p-2.5 rounded-xl flex items-center gap-2 ${
-                  dispute.aiRecommendation ? "bg-blue-50 text-[#0070E0]" : "bg-gray-50 text-gray-400"
+                  dispute.aiRecommendation ? "bg-blue-50 text-[#087EAA]" : "bg-gray-50 text-gray-400"
                 }`}>
                   <CheckCircle2 className={`w-4 h-4 shrink-0 ${dispute.aiRecommendation ? "text-emerald-500" : "text-gray-300"}`} />
                   <span>2. AI Advisory Report</span>
                 </div>
                 <div className={`p-2.5 rounded-xl flex items-center gap-2 ${
-                  dispute.negotiationHistory.length > 0 || dispute.status === "RESOLVED" ? "bg-blue-50 text-[#0070E0]" : "bg-gray-50 text-gray-400"
+                  dispute.negotiationHistory.length > 0 || dispute.status === "RESOLVED" ? "bg-blue-50 text-[#087EAA]" : "bg-gray-50 text-gray-400"
                 }`}>
                   <CheckCircle2 className={`w-4 h-4 shrink-0 ${dispute.negotiationHistory.length > 0 || dispute.status === "RESOLVED" ? "text-emerald-500" : "text-gray-300"}`} />
                   <span>3. Mutual Consensus</span>
@@ -490,13 +531,13 @@ export default function DisputeWorkspacePage() {
                 <CardHeader className="bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border-b border-blue-100">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-[#0070E0] text-white flex items-center justify-center shadow-xs">
+                      <div className="w-10 h-10 rounded-xl bg-[#087EAA] text-white flex items-center justify-center shadow-xs">
                         <Sparkles className="w-5 h-5" />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <CardTitle className="text-lg text-[#003087]">AI Advisory Resolution Report</CardTitle>
-                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-[#0070E0]">
+                          <CardTitle className="text-lg text-[#073B68]">AI Advisory Resolution Report</CardTitle>
+                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-[#087EAA]">
                             DEMO ADVISORY
                           </span>
                         </div>
@@ -533,10 +574,10 @@ export default function DisputeWorkspacePage() {
 
                     <div className="p-5 rounded-2xl bg-blue-50/40 border border-blue-100">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-[#003087]">Client Refund (Incomplete Scope)</span>
-                        <Building className="w-4 h-4 text-[#0070E0]" />
+                        <span className="text-xs font-bold text-[#073B68]">Client Refund (Incomplete Scope)</span>
+                        <Building className="w-4 h-4 text-[#087EAA]" />
                       </div>
-                      <span className="text-3xl font-extrabold text-[#003087]">
+                      <span className="text-3xl font-extrabold text-[#073B68]">
                         {formatCurrency(dispute.aiRecommendation.clientAmount, dispute.aiRecommendation.currency)}
                       </span>
                       <p className="text-xs text-gray-600 mt-2 leading-relaxed">
@@ -546,7 +587,7 @@ export default function DisputeWorkspacePage() {
                   </div>
 
                   {/* Advisory Rationale */}
-                  <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2">
+                  <div className="p-4 rounded-2xl bg-gray-50 border border-[#E5ECF6] space-y-2">
                     <span className="text-xs font-bold text-gray-700 uppercase tracking-wider block">
                       Forensic Rationale
                     </span>
@@ -564,14 +605,14 @@ export default function DisputeWorkspacePage() {
                   </div>
 
                   {/* Advisory Disclaimer */}
-                  <div className="text-[11px] text-gray-400 italic bg-gray-50 p-3 rounded-xl border border-gray-100">
+                  <div className="text-[11px] text-gray-400 italic bg-gray-50 p-3 rounded-xl border border-[#E5ECF6]">
                     <strong>Disclaimer:</strong> This recommendation is generated for demonstration purposes.
                     Actual AI investigation will be performed by the backend service when connected. Decisions remain subject to mutual human approval.
                   </div>
 
                   {/* CASE 1: MUTUAL AI APPROVAL ACTIONS */}
                   {dispute.status !== "RESOLVED" && (
-                    <div className="pt-2 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="pt-2 border-t border-[#E5ECF6] flex flex-col sm:flex-row items-center justify-between gap-4">
                       <div className="text-xs text-gray-500 flex items-center gap-3">
                         <span className="flex items-center gap-1.5">
                           Client:{" "}
@@ -618,8 +659,8 @@ export default function DisputeWorkspacePage() {
 
             {/* SECTION 2: NEGOTIATION HUB (CASE 2 & CASE 3) */}
             {dispute.status !== "RESOLVED" && (
-              <Card className="border-gray-100 bg-white rounded-3xl p-6 shadow-xs space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-4">
+              <Card className="border-[#E5ECF6] bg-white rounded-3xl p-6 shadow-xs space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E5ECF6] pb-4">
                   <div>
                     <h3 className="text-base font-bold text-gray-900">Direct Mutual Negotiation Hub</h3>
                     <p className="text-xs text-gray-500">
@@ -643,7 +684,7 @@ export default function DisputeWorkspacePage() {
                   </span>
 
                   {dispute.negotiationHistory.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-gray-400 bg-gray-50 rounded-2xl border border-gray-100">
+                    <div className="p-6 text-center text-xs text-gray-400 bg-gray-50 rounded-2xl border border-[#E5ECF6]">
                       No counteroffers submitted yet. Parties may accept the AI Advisory Recommendation above or propose custom settlement terms below.
                     </div>
                   ) : (
@@ -652,17 +693,21 @@ export default function DisputeWorkspacePage() {
                       return (
                         <div
                           key={item.id}
-                          className={`p-4 rounded-2xl border transition-all ${
-                            item.status === "PENDING"
-                              ? "border-blue-200 bg-blue-50/20"
-                              : item.status === "ACCEPTED"
-                              ? "border-emerald-200 bg-emerald-50/20"
-                              : "border-gray-100 bg-gray-50/50"
+                          className={`p-4 rounded-2xl border-r border-t border-b border-l-4 transition-all ${
+                            item.status === "ACCEPTED"
+                              ? "border-l-emerald-500 border-emerald-200 bg-emerald-50/20"
+                              : item.status === "PENDING" && item.offeredBy === "CLIENT"
+                              ? "border-l-[#073B68] border-blue-200 bg-blue-50/20"
+                              : item.status === "PENDING"
+                              ? "border-l-[#16A6A1] border-blue-200 bg-blue-50/20"
+                              : item.offeredBy === "CLIENT"
+                              ? "border-l-[#073B68] border-[#E5ECF6] bg-gray-50/50"
+                              : "border-l-[#16A6A1] border-[#E5ECF6] bg-gray-50/50"
                           }`}
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-[#003087]">
+                              <span className="text-xs font-bold text-[#073B68]">
                                 {item.offeredByName} ({item.offeredBy})
                               </span>
                               <Badge
@@ -687,7 +732,7 @@ export default function DisputeWorkspacePage() {
                             {item.reason}
                           </p>
 
-                          <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100">
+                          <div className="flex items-center justify-between mt-3 pt-2 border-t border-[#E5ECF6]">
                             <span className="text-[11px] text-gray-400">
                               {new Date(item.timestamp).toLocaleString()}
                             </span>
@@ -715,7 +760,7 @@ export default function DisputeWorkspacePage() {
                 {/* Propose Counteroffer Form */}
                 {((isClient && dispute.clientCounteroffersUsed < 2) ||
                   (!isClient && dispute.freelancerCounteroffersUsed < 2)) && (
-                  <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-3">
+                  <div className="p-4 rounded-2xl bg-gray-50 border border-[#E5ECF6] space-y-3">
                     <span className="text-xs font-bold text-gray-800 block">
                       Propose a Counteroffer ({isClient ? `Client: ${2 - dispute.clientCounteroffersUsed} remaining` : `Freelancer: ${2 - dispute.freelancerCounteroffersUsed} remaining`})
                     </span>
@@ -796,20 +841,20 @@ export default function DisputeWorkspacePage() {
                   <div>
                     <span className="text-[11px] text-gray-400 block font-medium">Hiring Client Contact</span>
                     <strong className="text-xs text-gray-800 block">{contract.clientName}</strong>
-                    <span className="text-xs text-[#0070E0] font-mono">contact@{contract.clientName.toLowerCase().replace(/\s+/g, "")}.com</span>
+                    <span className="text-xs text-[#087EAA] font-mono">contact@{contract.clientName.toLowerCase().replace(/\s+/g, "")}.com</span>
                   </div>
                   <div>
                     <span className="text-[11px] text-gray-400 block font-medium">Freelance Talent Contact</span>
                     <strong className="text-xs text-gray-800 block">{contract.freelancerName}</strong>
-                    <span className="text-xs text-[#0070E0] font-mono">vachan@trustpay.dev</span>
+                    <span className="text-xs text-[#087EAA] font-mono">vachan@trustpay.dev</span>
                   </div>
                 </div>
 
                 {/* Final Settlement Proposal Card */}
                 {dispute.finalSettlement ? (
-                  <div className="bg-white p-5 rounded-2xl border border-gray-100 space-y-3">
+                  <div className="bg-white p-5 rounded-2xl border border-[#E5ECF6] space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-[#003087]">Pending Final Settlement Terms</span>
+                      <span className="text-xs font-bold text-[#073B68]">Pending Final Settlement Terms</span>
                       <Badge variant="warning" size="sm">Awaiting Talent Consent</Badge>
                     </div>
                     <div className="grid grid-cols-2 gap-3 text-xs">
@@ -821,13 +866,13 @@ export default function DisputeWorkspacePage() {
                       </div>
                       <div>
                         <span className="text-gray-400 block">Client Refund:</span>
-                        <strong className="text-sm text-[#0070E0]">
+                        <strong className="text-sm text-[#087EAA]">
                           {formatCurrency(dispute.finalSettlement.clientAmount, dispute.finalSettlement.currency)}
                         </strong>
                       </div>
                     </div>
                     {dispute.finalSettlement.notes && (
-                      <p className="text-xs text-gray-600 bg-gray-50 p-2.5 rounded-xl border border-gray-100">
+                      <p className="text-xs text-gray-600 bg-gray-50 p-2.5 rounded-xl border border-[#E5ECF6]">
                         {dispute.finalSettlement.notes}
                       </p>
                     )}
@@ -848,7 +893,7 @@ export default function DisputeWorkspacePage() {
                   </div>
                 ) : (
                   isClient && (
-                    <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-3">
+                    <div className="bg-white p-4 rounded-2xl border border-[#E5ECF6] space-y-3">
                       <span className="text-xs font-bold text-gray-800 block">Submit Formal Final Settlement</span>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
@@ -919,7 +964,7 @@ export default function DisputeWorkspacePage() {
                   </div>
                   <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-2xs">
                     <span className="text-xs text-gray-400 block font-medium">Refunded to Client</span>
-                    <span className="text-2xl font-extrabold text-[#003087]">
+                    <span className="text-2xl font-extrabold text-[#073B68]">
                       {formatCurrency(dispute.resolution.clientAmount, dispute.resolution.currency)}
                     </span>
                   </div>

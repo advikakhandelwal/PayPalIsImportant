@@ -1,5 +1,7 @@
 "use client";
 
+import { formatCurrency } from "@/lib/utils";
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import {
   DisputeCase,
@@ -140,8 +142,8 @@ export const DisputeProvider: React.FC<{ children: React.ReactNode }> = ({ child
         "Milestone 2 deliverable lacks end-to-end integration test documentation",
         "Client submitted detailed revision notes highlighting missing latency metrics",
       ],
-      completedWorkBreakdown: `Architecture diagrams, database schemas, and primary CRUD endpoints verified against initial specifications ($${halfBudget} value).`,
-      disputedWorkBreakdown: `Load testing reports and third-party API webhook error handling omitted from final package ($${clientHalf} value).`,
+      completedWorkBreakdown: `Architecture diagrams, database schemas, and primary CRUD endpoints verified against initial specifications (${formatCurrency(halfBudget, input.currency)} value).`,
+      disputedWorkBreakdown: `Load testing reports and third-party API webhook error handling omitted from final package (${formatCurrency(clientHalf, input.currency)} value).`,
     };
 
     const newDispute: DisputeCase = {
@@ -200,14 +202,14 @@ export const DisputeProvider: React.FC<{ children: React.ReactNode }> = ({ child
             confidenceScore: 92,
             isAdvisoryOnly: true,
             generatedAt: new Date().toISOString(),
-            explanation: `Advisory analysis of submitted deliverables and project documentation suggests 65% of required specifications have been successfully implemented. A split of $${freelancerAmount} to talent and $${clientAmount} refund to client provides an equitable resolution.`,
+            explanation: `Advisory analysis of submitted deliverables and project documentation suggests 65% of required specifications have been successfully implemented. A split of ${formatCurrency(freelancerAmount, currency)} to talent and ${formatCurrency(clientAmount, currency)} refund to client provides an equitable resolution.`,
             evidence: [
               "Core repository commits verified",
               "Deliverable checklist comparison: 6 of 8 criteria fulfilled",
               "Partial revision requests addressed in latest submission",
             ],
-            completedWorkBreakdown: `Primary backend endpoints and schema migrations verified ($${freelancerAmount} value).`,
-            disputedWorkBreakdown: `High-concurrency stress testing and user guide remain pending ($${clientAmount} value).`,
+            completedWorkBreakdown: `Primary backend endpoints and schema migrations verified (${formatCurrency(freelancerAmount, currency)} value).`,
+            disputedWorkBreakdown: `High-concurrency stress testing and user guide remain pending (${formatCurrency(clientAmount, currency)} value).`,
           };
 
           return {
@@ -248,7 +250,7 @@ export const DisputeProvider: React.FC<{ children: React.ReactNode }> = ({ child
               currency: curr,
               resolvedAt: new Date().toISOString(),
               resolvedBy: "MUTUAL_AI_APPROVAL",
-              notes: `Both parties accepted the AI Advisory Recommendation. Payout: $${flAmount} to Talent, $${clAmount} refund to Client.`,
+              notes: `Both parties accepted the AI Advisory Recommendation. Payout: ${formatCurrency(flAmount, curr)} to Talent, ${formatCurrency(clAmount, curr)} refund to Client.`,
               talentPayout: flAmount,
               clientRefund: clAmount,
             },
@@ -368,7 +370,7 @@ export const DisputeProvider: React.FC<{ children: React.ReactNode }> = ({ child
             currency: targetOffer.currency,
             resolvedAt: new Date().toISOString(),
             resolvedBy: "NEGOTIATION",
-            notes: `Counteroffer accepted by mutual agreement. Talent receives $${flAmount}, Client receives $${clAmount}.`,
+            notes: `Counteroffer accepted by mutual agreement. Talent receives ${formatCurrency(flAmount, targetOffer.currency)}, Client receives ${formatCurrency(clAmount, targetOffer.currency)}.`,
             talentPayout: flAmount,
             clientRefund: clAmount,
           },

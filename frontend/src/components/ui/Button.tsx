@@ -25,15 +25,15 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     const variantStyles = {
       primary:
-        "btn-shadow bg-[#0070E0] text-white hover:bg-[#005bb8] focus-visible:ring-[#0070E0] active:scale-[0.98]",
+        "btn-shadow bg-[#087EAA] text-white hover:bg-[#073B68] focus-visible:ring-[#087EAA] active:scale-[0.98]",
       dark:
-        "bg-[#003087] text-white hover:bg-[#002060] focus-visible:ring-[#003087] shadow-sm active:scale-[0.98]",
+        "bg-[#073B68] text-white hover:bg-[#052847] focus-visible:ring-[#073B68] shadow-sm active:scale-[0.98]",
       secondary:
-        "bg-gray-100 text-gray-800 hover:bg-gray-200 focus-visible:ring-gray-300 active:scale-[0.98]",
+        "bg-[#F0F5FA] text-[#073B68] hover:bg-[#E2EDF7] focus-visible:ring-[#087EAA] active:scale-[0.98]",
       outline:
-        "border border-gray-200 bg-white text-gray-700 hover:border-[#0070E0] hover:text-[#0070E0] focus-visible:ring-[#0070E0] shadow-2xs",
+        "border border-[#D4E2F1] bg-white text-[#25364A] hover:border-[#087EAA] hover:text-[#087EAA] focus-visible:ring-[#087EAA] shadow-2xs active:scale-[0.98]",
       ghost:
-        "text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-gray-200",
+        "text-[#4A5D73] hover:bg-[#EDF4FA] hover:text-[#073B68] focus-visible:ring-gray-200",
       danger:
         "bg-rose-600 text-white hover:bg-rose-700 focus-visible:ring-rose-500 shadow-sm active:scale-[0.98]",
     };

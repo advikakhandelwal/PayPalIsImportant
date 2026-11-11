@@ -61,10 +61,10 @@ export default function SignupPage() {
       <div className="w-full max-w-md space-y-6">
         {/* Header */}
         <div className="text-center space-y-3">
-          <div className="w-14 h-14 rounded-2xl bg-[#0070E0] flex items-center justify-center text-white mx-auto shadow-md">
+          <div className="w-14 h-14 rounded-2xl bg-[#087EAA] flex items-center justify-center text-white mx-auto shadow-md">
             <ShieldCheck className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-extrabold text-[#003087] tracking-tight">
+          <h1 className="text-3xl font-extrabold text-[#073B68] tracking-tight">
             Create your TrustPay Account
           </h1>
           <p className="text-sm text-gray-500">
@@ -87,15 +87,15 @@ export default function SignupPage() {
                     onClick={() => setSelectedRole("FREELANCER")}
                     className={`p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
                       selectedRole === "FREELANCER"
-                        ? "border-[#0070E0] bg-blue-50/40 ring-2 ring-[#0070E0] shadow-xs"
+                        ? "border-[#087EAA] bg-[#EAF5FB]/40 ring-2 ring-[#087EAA] shadow-xs"
                         : "border-gray-200 bg-white hover:border-gray-300"
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3">
-                      <div className={`p-2 rounded-xl ${selectedRole === "FREELANCER" ? "bg-[#0070E0] text-white" : "bg-gray-100 text-gray-600"}`}>
+                      <div className={`p-2 rounded-xl ${selectedRole === "FREELANCER" ? "bg-[#087EAA] text-white" : "bg-gray-100 text-gray-600"}`}>
                         <User className="w-4 h-4" />
                       </div>
-                      {selectedRole === "FREELANCER" && <CheckCircle2 className="w-4 h-4 text-[#0070E0]" />}
+                      {selectedRole === "FREELANCER" && <CheckCircle2 className="w-4 h-4 text-[#087EAA]" />}
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-gray-900">Freelancer</h4>
@@ -108,15 +108,15 @@ export default function SignupPage() {
                     onClick={() => setSelectedRole("CLIENT")}
                     className={`p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
                       selectedRole === "CLIENT"
-                        ? "border-[#003087] bg-slate-50 ring-2 ring-[#003087] shadow-xs"
+                        ? "border-[#073B68] bg-slate-50 ring-2 ring-[#073B68] shadow-xs"
                         : "border-gray-200 bg-white hover:border-gray-300"
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3">
-                      <div className={`p-2 rounded-xl ${selectedRole === "CLIENT" ? "bg-[#003087] text-white" : "bg-gray-100 text-gray-600"}`}>
+                      <div className={`p-2 rounded-xl ${selectedRole === "CLIENT" ? "bg-[#073B68] text-white" : "bg-gray-100 text-gray-600"}`}>
                         <Building className="w-4 h-4" />
                       </div>
-                      {selectedRole === "CLIENT" && <CheckCircle2 className="w-4 h-4 text-[#003087]" />}
+                      {selectedRole === "CLIENT" && <CheckCircle2 className="w-4 h-4 text-[#073B68]" />}
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-gray-900">Client</h4>
@@ -180,7 +180,7 @@ export default function SignupPage() {
 
           <CardFooter className="justify-center border-t border-gray-100 py-4 text-xs text-gray-500 bg-gray-50/50">
             Already have an account?{" "}
-            <Link href="/auth/login" className="text-[#0070E0] font-bold ml-1 hover:underline">
+            <Link href="/auth/login" className="text-[#087EAA] font-bold ml-1 hover:underline">
               Log In
             </Link>
           </CardFooter>
