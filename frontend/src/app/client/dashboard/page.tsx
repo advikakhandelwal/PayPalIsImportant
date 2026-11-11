@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { formatCurrency, formatDate, getMilestoneStatusInfo, getEscrowStatusInfo } from "@/lib/utils";
 import { Milestone, Project, Application, MilestoneStatus, MilestoneSubtask, FreelancerCV } from "@/types";
+import { apiClient } from "@/services/api";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -279,6 +280,91 @@ function ClientDashboardContent() {
   const [address, setAddress] = useState(currentUser.address || "Block B, Tech Park, Outer Ring Road, Bellandur");
   const [postalCode, setPostalCode] = useState(currentUser.postalCode || "560103");
   const [profileSuccessMsg, setProfileSuccessMsg] = useState("");
+  const [isDecomposingAI, setIsDecomposingAI] = useState(false);
+  const [aiDecomposeMsg, setAiDecomposeMsg] = useState("");
+
+  // AI-Assisted Full Milestone Spec Decomposer (Connects to backend /api/ai/decompose-spec)
+  const handleAIDecomposeProject = async () => {
+    if (!newTitle.trim() && !newDescription.trim()) {
+      setAiDecomposeMsg("Please enter a project title or description first.");
+      return;
+    }
+    setIsDecomposingAI(true);
+    setAiDecomposeMsg("");
+    try {
+      const prompt = `Title: ${newTitle}\nDomain: ${newDomain}\nDescription: ${newDescription}\nSkills: ${newSkills.join(", ")}`;
+      const result = await apiClient.decomposeSpec({
+        prompt,
+        total_budget: newTotalBudget,
+        currency: newCurrency,
+        target_role: newDomain,
+      });
+
+      if (result && Array.isArray(result.steps) && result.steps.length > 0) {
+        const steps: Milestone[] = result.steps.map((st: any, idx: number) => ({
+          id: `ai-step-${idx + 1}-${Date.now()}`,
+          stepNumber: idx + 1,
+          title: st.title || `Milestone ${idx + 1}`,
+          description: st.deliverable_criteria || st.title || "",
+          percentage: Number(st.percentage) || Math.round(100 / result.steps.length),
+          paymentAmount: Math.round(Number(st.amount) || ((newTotalBudget * (st.percentage || 33)) / 100)),
+          currency: newCurrency,
+          status: (idx === 0 ? "ACTIVE" : "LOCKED") as MilestoneStatus,
+          deliverableRequirements: Array.isArray(st.acceptance_checklist)
+            ? st.acceptance_checklist
+            : [st.deliverable_criteria || "Deliverable submission verification"],
+        }));
+        setNewMilestones(steps);
+        setAiDecomposeMsg(`AI Milestone Breakdown generated via ${result.ai_provider_used || "Google Gemini"}!`);
+      } else {
+        setAiDecomposeMsg("AI decomposition completed with standard allocation.");
+      }
+    } catch (err: any) {
+      console.warn("AI decomposition fallback:", err);
+      // Deterministic fallback to 30%/40%/30%
+      const s1 = Math.round(newTotalBudget * 0.3);
+      const s2 = Math.round(newTotalBudget * 0.4);
+      const s3 = newTotalBudget - s1 - s2;
+      setNewMilestones([
+        {
+          id: `step-1-${Date.now()}`,
+          stepNumber: 1,
+          title: "Architecture, Data Models & Core Foundation",
+          description: "Scaffold core structures, models, and initial prototype setup.",
+          percentage: 30,
+          paymentAmount: s1,
+          currency: newCurrency,
+          status: "ACTIVE" as MilestoneStatus,
+          deliverableRequirements: ["Initial prototype or models", "Specification alignment"],
+        },
+        {
+          id: `step-2-${Date.now()}`,
+          stepNumber: 2,
+          title: "Feature Implementation & Core Functionality",
+          description: "Complete main deliverable features and end-to-end integration.",
+          percentage: 40,
+          paymentAmount: s2,
+          currency: newCurrency,
+          status: "LOCKED" as MilestoneStatus,
+          deliverableRequirements: ["Full feature implementation", "Integration verification"],
+        },
+        {
+          id: `step-3-${Date.now()}`,
+          stepNumber: 3,
+          title: "Quality Assurance, Security Hardening & Handover",
+          description: "Final audits, security checks, and release verification.",
+          percentage: 30,
+          paymentAmount: s3,
+          currency: newCurrency,
+          status: "LOCKED" as MilestoneStatus,
+          deliverableRequirements: ["Final release package", "Security audit pass"],
+        },
+      ]);
+      setAiDecomposeMsg("Standard 30% / 40% / 30% milestone schedule generated.");
+    } finally {
+      setIsDecomposingAI(false);
+    }
+  };
 
   // AI-Assisted Milestone Subtask Generator
   const handleGenerateAISubtasks = (milestoneIndex: number) => {
@@ -1378,8 +1464,19 @@ function ClientDashboardContent() {
                       </p>
                     </div>
 
-                    {/* Progress Badge */}
-                    <div className="flex items-center gap-3">
+                    {/* Progress Badge & AI Auto-Generate Button */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isDecomposingAI}
+                        onClick={handleAIDecomposeProject}
+                        className="text-xs h-8 px-3 bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200 text-purple-900 hover:from-purple-100 hover:to-blue-100 font-bold shadow-2xs"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 mr-1.5 text-purple-600 animate-pulse" />
+                        {isDecomposingAI ? "Gemini AI Analyzing..." : "Auto-Generate Milestones with AI"}
+                      </Button>
                       <div className="text-right">
                         <span className="text-[11px] text-gray-500 block">
                           Total Budget: {formatCurrency(totalMilestoneAmounts, newCurrency)} / {formatCurrency(newTotalBudget, newCurrency)}
@@ -1396,6 +1493,13 @@ function ClientDashboardContent() {
                       </span>
                     </div>
                   </div>
+
+                  {aiDecomposeMsg && (
+                    <div className="p-2.5 rounded-xl bg-purple-50 border border-purple-200 text-xs text-purple-900 font-medium flex items-center gap-2 animate-fade-in">
+                      <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+                      <span>{aiDecomposeMsg}</span>
+                    </div>
+                  )}
 
                   {/* Percentage Progress Bar */}
                   <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
