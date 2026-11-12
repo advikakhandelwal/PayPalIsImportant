@@ -4,12 +4,15 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Database URL configuration (defaults to SQLite local database file)
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./trustpay.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # SQLite requires check_same_thread=False and generous timeout for concurrent FastAPI workers.
-# If later migrated to PostgreSQL, connect_args remains empty.
+# For PostgreSQL / MySQL, connect_args remains empty and pool_pre_ping prevents stale sockets.
+is_sqlite = DATABASE_URL.startswith("sqlite")
 connect_args = (
     {"check_same_thread": False, "timeout": 30}
-    if DATABASE_URL.startswith("sqlite")
+    if is_sqlite
     else {}
 )
 
@@ -17,6 +20,7 @@ connect_args = (
 engine = create_engine(
     DATABASE_URL,
     connect_args=connect_args,
+    pool_pre_ping=not is_sqlite,
     echo=False,
 )
 

@@ -76,29 +76,30 @@ async def lifespan(app: FastAPI):
     validate_jwt_configuration()
 
     Base.metadata.create_all(bind=engine)
-    try:
-        from sqlalchemy import text
-        with engine.begin() as conn:
-            cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()}
-            user_migrations = {
-                "paypal_payout_email": "VARCHAR(255)",
-                "city": "VARCHAR(120)",
-                "state": "VARCHAR(120)",
-                "country": "VARCHAR(120)",
-                "address": "TEXT",
-                "postal_code": "VARCHAR(40)",
-                "skills": "JSON",
-                "experience_years": "INTEGER",
-                "education": "JSON",
-            }
-            for col_name, col_type in user_migrations.items():
-                if col_name not in cols:
-                    conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
-            app_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(applications)")).fetchall()}
-            if "freelancer_profile" not in app_cols:
-                conn.execute(text("ALTER TABLE applications ADD COLUMN freelancer_profile JSON"))
-    except Exception as mig_err:
-        logger.warning(f"Non-blocking SQLite column check: {mig_err}")
+    if engine.dialect.name == "sqlite":
+        try:
+            from sqlalchemy import text
+            with engine.begin() as conn:
+                cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()}
+                user_migrations = {
+                    "paypal_payout_email": "VARCHAR(255)",
+                    "city": "VARCHAR(120)",
+                    "state": "VARCHAR(120)",
+                    "country": "VARCHAR(120)",
+                    "address": "TEXT",
+                    "postal_code": "VARCHAR(40)",
+                    "skills": "JSON",
+                    "experience_years": "INTEGER",
+                    "education": "JSON",
+                }
+                for col_name, col_type in user_migrations.items():
+                    if col_name not in cols:
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
+                app_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(applications)")).fetchall()}
+                if "freelancer_profile" not in app_cols:
+                    conn.execute(text("ALTER TABLE applications ADD COLUMN freelancer_profile JSON"))
+        except Exception as mig_err:
+            logger.warning(f"Non-blocking SQLite column check: {mig_err}")
 
     if os.getenv("SEED_DEMO_DATA", "false").strip().lower() == "true":
         if is_production_environment():
