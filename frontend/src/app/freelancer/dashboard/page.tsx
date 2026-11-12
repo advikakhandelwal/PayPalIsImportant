@@ -84,15 +84,20 @@ function FreelancerDashboardContent() {
   // Frontend UI route guard: show access-denied state if wrong role
   const isFreelancerRole = activeRole === "FREELANCER" || currentUser.role === "FREELANCER";
 
-  // Multi-contract representation for freelancer
+  // Multi-contract representation for freelancer (exclude completed/refunded from Active by default)
   const myContracts = contracts.filter(
     (c) => c.freelancerId === currentUser.id || c.freelancerName === currentUser.name
   );
+  const activeOnlyContracts = myContracts.filter(
+    (c) => c.escrowStatus !== "COMPLETED" && c.escrowStatus !== "REFUNDED"
+  );
   const [selectedContractId, setSelectedContractId] = useState<string>("");
   const [contractSearch, setContractSearch] = useState<string>("");
-  const selectedContractForTab =
-    myContracts.find((c) => c.id === selectedContractId) ?? myContracts[0] ?? activeContract;
+  const [contractFilter, setContractFilter] = useState<"ACTIVE" | "COMPLETED" | "ALL">("ACTIVE");
   const filteredMyContracts = myContracts.filter((c) => {
+    const isDone = c.escrowStatus === "COMPLETED" || c.escrowStatus === "REFUNDED";
+    if (contractFilter === "ACTIVE" && isDone) return false;
+    if (contractFilter === "COMPLETED" && !isDone) return false;
     const q = contractSearch.trim().toLowerCase();
     return (
       !q ||
@@ -101,6 +106,11 @@ function FreelancerDashboardContent() {
       c.id.toLowerCase().includes(q)
     );
   });
+  const selectedContractForTab =
+    filteredMyContracts.find((c) => c.id === selectedContractId) ??
+    filteredMyContracts[0] ??
+    activeOnlyContracts[0] ??
+    activeContract;
   const [activeTab, setActiveTab] = useState<FreelancerTab>(initialTab);
 
   // Sync tab if URL param changes
@@ -359,14 +369,21 @@ function FreelancerDashboardContent() {
       .filter((c) => c.escrowStatus === "COMPLETED" || c.escrowStatus === "REFUNDED")
       .map((c) => c.projectId),
   ]);
+  const inProgressProjectIds = new Set([
+    ...projects.filter((p) => p.status === "IN_PROGRESS").map((p) => p.id),
+    ...contracts.map((c) => c.projectId),
+  ]);
   const allMyApplications = applications.filter(
     (a) => a.freelancerId === currentUser.id || a.freelancerName === currentUser.name
   );
-  const myApplications = allMyApplications.filter((a) => !completedProjectIds.has(a.projectId));
+  const myApplications = allMyApplications.filter(
+    (a) => !completedProjectIds.has(a.projectId) && !inProgressProjectIds.has(a.projectId)
+  );
   const filteredMyApplications = allMyApplications.filter((a) => {
     if (filterAppProjectId !== "ALL" && a.projectId !== filterAppProjectId) return false;
     const projDone = completedProjectIds.has(a.projectId);
-    if (appStatusFilter === "ONGOING" && (a.status === "REJECTED" || projDone)) return false;
+    const projInProgress = inProgressProjectIds.has(a.projectId);
+    if (appStatusFilter === "ONGOING" && (a.status === "REJECTED" || projDone || projInProgress)) return false;
     if (appStatusFilter === "COMPLETED" && !projDone) return false;
     if (appStatusFilter === "REJECTED" && a.status !== "REJECTED") return false;
     const q = appSearchQuery.trim().toLowerCase();
@@ -637,7 +654,7 @@ function FreelancerDashboardContent() {
       {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-white border border-slate-200 shadow-xs">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-blue-50 text-paypal-dark flex items-center justify-center font-bold text-lg">
+          <div className="w-12 h-12 rounded-xl bg-[#EDF7F6] text-paypal-dark flex items-center justify-center font-bold text-lg">
             {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : "F"}
           </div>
           <div>
@@ -749,10 +766,10 @@ function FreelancerDashboardContent() {
         <div className="space-y-6">
           {/* Quick PayPal Payout Setup & Recent Transfer Alert */}
           {!currentUser.paypalPayoutEmail && (
-            <Card className="border-blue-200 bg-blue-50/50">
+            <Card className="border-[#9DF9EF] bg-[#EDF7F6]">
               <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-0.5 text-xs">
-                  <p className="font-bold text-[#003087]">
+                  <p className="font-bold text-[#1E1820]">
                     Set Your PayPal Payout Email (No Bank Details Needed)
                   </p>
                   <p className="text-slate-600">
@@ -768,7 +785,7 @@ function FreelancerDashboardContent() {
                     value={paypalPayoutInput}
                     onChange={(e) => setPaypalPayoutInput(e.target.value)}
                     placeholder="your-paypal@example.com"
-                    className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 min-w-[230px] focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                    className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 min-w-[230px] focus:outline-none focus:ring-2 focus:ring-[#51E2F5]"
                   />
                   <Button type="submit" variant="primary" size="sm" disabled={isSavingPayoutEmail}>
                     {isSavingPayoutEmail ? "Saving..." : "Save PayPal Email"}
@@ -1087,7 +1104,7 @@ function FreelancerDashboardContent() {
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
               <span className="font-semibold text-slate-500">Active filters:</span>
               {searchQuery && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EDF7F6] text-paypal-blue font-medium border border-[#9DF9EF]">
                   Search: &ldquo;{searchQuery}&rdquo;
                   <button onClick={() => setSearchQuery("")} className="hover:text-blue-800">
                     <X className="w-3 h-3" />
@@ -1095,7 +1112,7 @@ function FreelancerDashboardContent() {
                 </span>
               )}
               {selectedDomain !== "ALL" && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EDF7F6] text-paypal-blue font-medium border border-[#9DF9EF]">
                   Domain: {selectedDomain}
                   <button onClick={() => setSelectedDomain("ALL")} className="hover:text-blue-800">
                     <X className="w-3 h-3" />
@@ -1103,7 +1120,7 @@ function FreelancerDashboardContent() {
                 </span>
               )}
               {selectedSkill !== "ALL" && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EDF7F6] text-paypal-blue font-medium border border-[#9DF9EF]">
                   Skill: {selectedSkill}
                   <button onClick={() => setSelectedSkill("ALL")} className="hover:text-blue-800">
                     <X className="w-3 h-3" />
@@ -1111,7 +1128,7 @@ function FreelancerDashboardContent() {
                 </span>
               )}
               {selectedExperience !== "ALL" && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EDF7F6] text-paypal-blue font-medium border border-[#9DF9EF]">
                   Level: {selectedExperience}
                   <button onClick={() => setSelectedExperience("ALL")} className="hover:text-blue-800">
                     <X className="w-3 h-3" />
@@ -1119,7 +1136,7 @@ function FreelancerDashboardContent() {
                 </span>
               )}
               {(minBudget || maxBudget) && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-paypal-blue font-medium border border-blue-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EDF7F6] text-paypal-blue font-medium border border-[#9DF9EF]">
                   Budget: ${minBudget || "0"} - ${maxBudget || "∞"}
                   <button
                     onClick={() => {
@@ -1433,10 +1450,10 @@ function FreelancerDashboardContent() {
                   </div>
 
                   {app.aiRecommendation && (
-                    <div className="p-2.5 rounded-lg bg-purple-50/70 border border-purple-200 text-xs flex items-center justify-between">
+                    <div className="p-2.5 rounded-lg bg-[#FFA8B6]/20 border border-[#FFA8B6]/60 text-xs flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-purple-600" />
-                        <span className="text-purple-900 font-semibold">
+                        <Sparkles className="w-4 h-4 text-[#A28089]" />
+                        <span className="text-[#1E1820] font-semibold">
                           AI Match Score: {app.aiRecommendation.fitScore}% ({app.aiRecommendation.domainMatchRate}% Domain Fit)
                         </span>
                       </div>
@@ -1511,23 +1528,46 @@ function FreelancerDashboardContent() {
       {/* TAB 4: ACTIVE CONTRACTS */}
       {activeTab === "contracts" && (
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-xl font-bold text-slate-900">Active Escrow Contract Hub</h2>
-              <p className="text-xs text-slate-500">Milestone execution, deliverable submission, and payment releases.</p>
+              <h2 className="text-xl font-bold text-[#1E1820]">Active Escrow Contract Hub</h2>
+              <p className="text-xs text-[#5C4B51]">Milestone execution, deliverable submission, and payment releases.</p>
             </div>
-            <Badge variant={escrowStatusInfo.variant} size="md">
-              <Lock className="w-3.5 h-3.5 mr-1" />
-              {escrowStatusInfo.label}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 p-1 bg-white rounded-full border border-[#A28089]/25">
+                {(
+                  [
+                    { id: "ACTIVE", label: "Active" },
+                    { id: "COMPLETED", label: "Completed" },
+                    { id: "ALL", label: "All" },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setContractFilter(tab.id)}
+                    className={`px-3 py-1 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                      contractFilter === tab.id
+                        ? "bg-[#1E1820] text-[#EDF7F6]"
+                        : "text-[#5C4B51] hover:text-[#1E1820]"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <Badge variant={escrowStatusInfo.variant} size="md">
+                <Lock className="w-3.5 h-3.5 mr-1" />
+                {escrowStatusInfo.label}
+              </Badge>
+            </div>
           </div>
 
           {/* Simple 1-Step PayPal Payout Setup (No Bank Details Needed) */}
-          <Card className="border-blue-100 bg-blue-50/40">
+          <Card className="border-[#9DF9EF] bg-[#EDF7F6]">
             <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-0.5 text-xs">
-                <p className="font-bold text-[#003087] flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-[#0070E0]" />
+                <p className="font-bold text-[#1E1820] flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-[#0EA5B7]" />
                   PayPal Payout Email (No Bank Details Needed)
                 </p>
                 <p className="text-slate-600">
@@ -1543,7 +1583,7 @@ function FreelancerDashboardContent() {
                   value={paypalPayoutInput}
                   onChange={(e) => setPaypalPayoutInput(e.target.value)}
                   placeholder="your-paypal@example.com"
-                  className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 min-w-[240px] focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                  className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 min-w-[240px] focus:outline-none focus:ring-2 focus:ring-[#51E2F5]"
                 />
                 <Button type="submit" variant="primary" size="sm" disabled={isSavingPayoutEmail}>
                   {isSavingPayoutEmail ? "Saving..." : "Save PayPal Email"}
@@ -1570,7 +1610,7 @@ function FreelancerDashboardContent() {
             {/* Left Sidebar: Clickable Contract Cards */}
             <div className="lg:col-span-4 space-y-3">
               <Card className="border-slate-200 bg-white p-3.5 rounded-2xl space-y-2.5 shadow-xs">
-                <span className="text-xs font-extrabold text-[#003087] uppercase tracking-wider block">
+                <span className="text-xs font-extrabold text-[#1E1820] uppercase tracking-wider block">
                   Your Contracts ({filteredMyContracts.length}/{myContracts.length})
                 </span>
                 <input
@@ -1594,8 +1634,8 @@ function FreelancerDashboardContent() {
                       onClick={() => setSelectedContractId(c.id)}
                       className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer ${
                         isSelected
-                          ? "border-paypal-blue bg-blue-50/40 ring-2 ring-paypal-blue/20 shadow-sm"
-                          : "border-slate-200 bg-white hover:border-blue-200"
+                          ? "border-paypal-blue bg-[#EDF7F6] ring-2 ring-paypal-blue/20 shadow-sm"
+                          : "border-slate-200 bg-white hover:border-[#9DF9EF]"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -1621,35 +1661,36 @@ function FreelancerDashboardContent() {
 
             {/* Right Panel: Selected Contract Workspace */}
             <div className="lg:col-span-8">
-          <Card>
-            <CardHeader>
+          <Card className="border-gray-100 bg-white shadow-lg rounded-3xl overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-[#9DF9EF]/30 to-[#FFA8B6]/20 border-b border-gray-100 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <CardTitle>{selectedContractForTab.projectTitle}</CardTitle>
+                  <CardTitle className="text-xl">{selectedContractForTab.projectTitle}</CardTitle>
                   <CardDescription>
                     Client: <strong className="text-slate-800">{selectedContractForTab.clientName}</strong> • Contract ID:{" "}
                     <code className="text-xs font-mono">{selectedContractForTab.id}</code>
                   </CardDescription>
                 </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                  <div className="text-right">
-                    <span className="text-xs text-slate-500">Contract Value</span>
-                    <p className="text-xl font-bold text-paypal-dark">
-                      {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
-                    </p>
-                  </div>
+                <div className="text-left sm:text-right shrink-0">
+                  <span className="text-xs text-slate-500">Contract Value</span>
+                  <p className="text-2xl font-extrabold text-[#1E1820]">
+                    {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
                   <Link
                     href={`/messages?contractId=${selectedContractForTab.id}`}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-50 hover:bg-blue-100 text-[#0070E0] border border-blue-200 transition-colors shadow-2xs"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold bg-[#EDF7F6] hover:bg-[#9DF9EF]/50 text-[#0EA5B7] border border-[#9DF9EF] transition-colors shadow-2xs whitespace-nowrap shrink-0"
                   >
-                    <MessageSquare className="w-3.5 h-3.5 text-[#0070E0]" />
+                    <MessageSquare className="w-3.5 h-3.5 text-[#0EA5B7] shrink-0" />
                     <span>Messages</span>
                   </Link>
                   <Link
                     href={`/disputes?contractId=${selectedContractForTab.id}`}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-2xs"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-2xs whitespace-nowrap shrink-0"
                   >
-                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     <span>Disputes</span>
                   </Link>
                   {selectedContractForTab.escrowStatus !== "COMPLETED" &&
@@ -1657,7 +1698,7 @@ function FreelancerDashboardContent() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="text-xs text-rose-700 border-rose-200 hover:bg-rose-50"
+                        className="text-xs text-rose-700 border-rose-200 hover:bg-rose-50 whitespace-nowrap shrink-0"
                         onClick={() => {
                           const held = selectedContractForTab.heldInEscrowAmount || 0;
                           setEarlyTalentShare(String(Math.round(held * 0.5)));
@@ -1669,10 +1710,9 @@ function FreelancerDashboardContent() {
                         End Early / Settle
                       </Button>
                     )}
-                </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-6 pt-6">
               {selectedContractForTab.escrowStatus === "AWAITING_AUTHORIZATION" && (
                 <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center gap-2.5">
                   <Clock className="w-4 h-4 text-amber-600 shrink-0" />
@@ -1708,10 +1748,10 @@ function FreelancerDashboardContent() {
               </div>
 
               {/* Complete Project Brief, Client Info & Deadlines */}
-              <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-100 space-y-3 text-xs">
+              <div className="p-4 rounded-xl bg-[#EDF7F6] border border-[#9DF9EF] space-y-3 text-xs">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-bold text-[#003087] uppercase tracking-wider text-[11px]">
+                    <span className="font-bold text-[#1E1820] uppercase tracking-wider text-[11px]">
                       Complete Project Brief &amp; Deadlines
                     </span>
                     {selectedContractForTab.projectDomain && (
@@ -1720,7 +1760,7 @@ function FreelancerDashboardContent() {
                   </div>
                   <div className="flex items-center gap-3 text-[11px]">
                     <span className="font-semibold text-slate-700 flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-[#0070E0]" />
+                      <Clock className="w-3.5 h-3.5 text-[#0EA5B7]" />
                       Project Deadline:{" "}
                       <strong>
                         {selectedContractForTab.projectDeadline
@@ -1740,7 +1780,7 @@ function FreelancerDashboardContent() {
                     {selectedContractForTab.requiredSkills.map((skill) => (
                       <span
                         key={skill}
-                        className="px-2.5 py-0.5 rounded-full bg-white border border-blue-200 text-slate-700 text-[11px] font-medium"
+                        className="px-2.5 py-0.5 rounded-full bg-white border border-[#9DF9EF] text-slate-700 text-[11px] font-medium"
                       >
                         {skill}
                       </span>
@@ -1748,18 +1788,18 @@ function FreelancerDashboardContent() {
                   </div>
                 )}
 
-                <div className="pt-2 border-t border-blue-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-600">
+                <div className="pt-2 border-t border-[#9DF9EF] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-600">
                   <span>
                     Client Contact: <strong className="text-slate-900">{selectedContractForTab.clientName}</strong>
                     {selectedContractForTab.clientEmail ? ` (${selectedContractForTab.clientEmail})` : ""}
                   </span>
                   <span>
                     PayPal Payout To:{" "}
-                    <strong className="font-mono text-[#003087]">
+                    <strong className="font-mono text-[#1E1820]">
                       {selectedContractForTab.freelancerPayoutEmail || currentUser.paypalPayoutEmail || currentUser.email}
                     </strong>
                   </span>
-                  <span className="font-semibold text-[#003087]">
+                  <span className="font-semibold text-[#1E1820]">
                     Progress: {selectedContractForTab.milestones.filter((m) => m.status === "RELEASED").length} /{" "}
                     {selectedContractForTab.milestones.length} Milestones Completed
                   </span>
@@ -1782,11 +1822,11 @@ function FreelancerDashboardContent() {
                         key={ms.id}
                         className={`p-5 rounded-xl border transition-all ${
                           ms.status === "ACTIVE"
-                            ? "border-paypal-blue bg-blue-50/10 ring-1 ring-paypal-blue"
+                            ? "border-paypal-blue bg-[#EDF7F6]/10 ring-1 ring-paypal-blue"
                             : ms.status === "RELEASED"
                             ? "border-emerald-200 bg-emerald-50/20"
                             : ms.status === "IN_REVIEW"
-                            ? "border-purple-200 bg-purple-50/20"
+                            ? "border-[#FFA8B6]/60 bg-[#FFA8B6]/20/20"
                             : "border-slate-200 bg-white"
                         }`}
                       >
@@ -1816,7 +1856,7 @@ function FreelancerDashboardContent() {
                           <div className="mb-3.5 p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
                             <div className="flex items-center justify-between text-[11px]">
                               <span className="font-bold text-paypal-dark flex items-center gap-1.5">
-                                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                                <Sparkles className="w-3.5 h-3.5 text-[#A28089]" />
                                 Internal Subtask Division ({completedSubtasksCount}/{totalSubtasksCount} Completed)
                               </span>
                               <span className="text-slate-500 font-semibold">
@@ -1832,7 +1872,7 @@ function FreelancerDashboardContent() {
                                     st.status === 'COMPLETED'
                                       ? 'bg-emerald-50/60 border-emerald-200'
                                       : st.status === 'IN_PROGRESS'
-                                      ? 'bg-blue-50/60 border-blue-200'
+                                      ? 'bg-[#EDF7F6] border-[#9DF9EF]'
                                       : 'bg-white border-slate-200'
                                   }`}
                                 >
@@ -1917,16 +1957,16 @@ function FreelancerDashboardContent() {
                             )}
 
                             {ms.submission.aiVerificationReport && (
-                              <div className="mt-2 p-2.5 bg-purple-50 rounded-lg border border-purple-200 text-[11px] text-purple-900 space-y-1">
+                              <div className="mt-2 p-2.5 bg-[#FFA8B6]/20 rounded-lg border border-[#FFA8B6]/60 text-[11px] text-[#1E1820] space-y-1">
                                 <div className="flex items-center justify-between font-bold">
                                   <span>
                                     AI Advisory Inspection: {ms.submission.aiVerificationReport.overallScore}% (Grade{" "}
                                     {ms.submission.aiVerificationReport.qualityGrade})
                                   </span>
-                                  <span className="text-[10px] text-purple-600 font-normal">Advisory Only</span>
+                                  <span className="text-[10px] text-[#A28089] font-normal">Advisory Only</span>
                                 </div>
                                 {ms.submission.aiVerificationReport.feedbackNotes && (
-                                  <p className="text-[11px] text-purple-800">{ms.submission.aiVerificationReport.feedbackNotes}</p>
+                                  <p className="text-[11px] text-[#1E1820]">{ms.submission.aiVerificationReport.feedbackNotes}</p>
                                 )}
                               </div>
                             )}
@@ -2095,7 +2135,7 @@ function FreelancerDashboardContent() {
                     <div className="flex flex-wrap gap-1.5">
                       {currentUser.skills && currentUser.skills.length > 0 ? (
                         currentUser.skills.map((s, idx) => (
-                          <span key={idx} className="px-2.5 py-1 rounded-md bg-blue-50 text-paypal-dark font-medium border border-blue-200">
+                          <span key={idx} className="px-2.5 py-1 rounded-md bg-[#EDF7F6] text-paypal-dark font-medium border border-[#9DF9EF]">
                             {s}
                           </span>
                         ))
@@ -2211,7 +2251,7 @@ function FreelancerDashboardContent() {
             <CardHeader className="bg-slate-50 border-b border-slate-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-paypal-blue flex items-center justify-center font-bold">
+                  <div className="w-10 h-10 rounded-xl bg-[#EDF7F6] text-paypal-blue flex items-center justify-center font-bold">
                     <FileCheck className="w-5 h-5 text-paypal-blue" />
                   </div>
                   <div>
@@ -2276,13 +2316,13 @@ function FreelancerDashboardContent() {
                   </div>
 
                   {currentUser.cvFile.extractedInfo && (
-                    <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-200 space-y-3">
+                    <div className="p-4 rounded-xl bg-[#FFA8B6]/15 border border-[#FFA8B6]/60 space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-purple-900 flex items-center gap-1.5 text-xs">
-                          <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                        <span className="font-bold text-[#1E1820] flex items-center gap-1.5 text-xs">
+                          <Sparkles className="w-3.5 h-3.5 text-[#A28089]" />
                           Parsed Resume Credentials (AI Advisory Summary)
                         </span>
-                        <span className="text-[10px] text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full font-semibold">
+                        <span className="text-[10px] text-[#5C4B51] bg-purple-100 px-2 py-0.5 rounded-full font-semibold">
                           DEMO ADVISORY
                         </span>
                       </div>
@@ -2296,7 +2336,7 @@ function FreelancerDashboardContent() {
                           <strong className="text-slate-800 block mb-1">Extracted Technical Skills:</strong>
                           <div className="flex flex-wrap gap-1">
                             {currentUser.cvFile.extractedInfo.skills.map((sk, idx) => (
-                              <span key={idx} className="px-2 py-0.5 rounded bg-white border border-purple-200 text-purple-900 font-medium">
+                              <span key={idx} className="px-2 py-0.5 rounded bg-white border border-[#FFA8B6]/60 text-[#1E1820] font-medium">
                                 {sk}
                               </span>
                             ))}
@@ -2424,7 +2464,7 @@ function FreelancerDashboardContent() {
             </Card>
             <Card className="p-5 space-y-1">
               <span className="text-xs font-semibold text-slate-500 block">Pending in Escrow</span>
-              <div className="text-2xl font-extrabold text-[#003087]">
+              <div className="text-2xl font-extrabold text-[#1E1820]">
                 {formatCurrency(totalEscrowPending, reportCurrency)}
               </div>
               <p className="text-[11px] text-slate-400">Locked for upcoming milestones</p>
@@ -2488,7 +2528,7 @@ function FreelancerDashboardContent() {
                             <td className="py-3 pr-4 font-bold text-emerald-700">
                               {formatCurrency(c.releasedAmount, c.currency)}
                             </td>
-                            <td className="py-3 pr-4 font-semibold text-[#003087]">
+                            <td className="py-3 pr-4 font-semibold text-[#1E1820]">
                               {formatCurrency(c.heldInEscrowAmount, c.currency)}
                             </td>
                             <td className="py-3 font-mono text-[11px] text-slate-600">
@@ -2628,14 +2668,14 @@ function FreelancerDashboardContent() {
                 />
                 {currentUser.cvFile ? (
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 p-2.5 rounded-lg bg-white border border-blue-200 cursor-pointer">
+                    <label className="flex items-center gap-2 p-2.5 rounded-lg bg-white border border-[#9DF9EF] cursor-pointer">
                       <input
                         type="radio"
                         name="applyCvChoice"
                         checked={applyCvSource === "profile"}
                         onChange={() => setApplyCvSource("profile")}
                       />
-                      <FileCheck className="w-4 h-4 text-[#0070E0] shrink-0" />
+                      <FileCheck className="w-4 h-4 text-[#0EA5B7] shrink-0" />
                       <span className="flex-1 truncate font-semibold text-slate-900">
                         Use Profile CV: {currentUser.cvFile.name}
                       </span>
@@ -2646,9 +2686,9 @@ function FreelancerDashboardContent() {
                     <button
                       type="button"
                       onClick={() => applyCvInputRef.current?.click()}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-slate-300 bg-white hover:border-[#0070E0] text-slate-700 font-semibold cursor-pointer"
+                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-slate-300 bg-white hover:border-[#51E2F5] text-slate-700 font-semibold cursor-pointer"
                     >
-                      <UploadCloud className="w-3.5 h-3.5 text-[#0070E0]" />
+                      <UploadCloud className="w-3.5 h-3.5 text-[#0EA5B7]" />
                       Or Upload a Different CV (.pdf, .doc, .docx)
                     </button>
                   </div>
@@ -2656,9 +2696,9 @@ function FreelancerDashboardContent() {
                   <button
                     type="button"
                     onClick={() => applyCvInputRef.current?.click()}
-                    className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-dashed border-[#0070E0] bg-white hover:bg-blue-50 text-[#003087] font-bold cursor-pointer"
+                    className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-dashed border-[#51E2F5] bg-white hover:bg-[#EDF7F6] text-[#1E1820] font-bold cursor-pointer"
                   >
-                    <UploadCloud className="w-4 h-4 text-[#0070E0]" />
+                    <UploadCloud className="w-4 h-4 text-[#0EA5B7]" />
                     Upload CV / Resume (.pdf, .doc, .docx)
                   </button>
                 )}
@@ -2686,7 +2726,7 @@ function FreelancerDashboardContent() {
                 onChange={(e) => setCoverLetter(e.target.value)}
               />
 
-              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-lg text-xs text-slate-600 space-y-1">
+              <div className="p-3 bg-[#EDF7F6] border border-[#9DF9EF] rounded-lg text-xs text-slate-600 space-y-1">
                 <span className="font-semibold text-paypal-dark block">PayPal Escrow Guarantee:</span>
                 <p className="text-[11px] leading-tight">
                   If selected, project funds are locked upfront in escrow. Payment is released step-by-step as milestones are accepted.
@@ -2754,12 +2794,12 @@ function FreelancerDashboardContent() {
                 onChange={(e) => setSubmissionNotes(e.target.value)}
               />
 
-              <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-lg text-xs text-purple-900 space-y-1">
+              <div className="p-3 bg-[#FFA8B6]/20 border border-[#FFA8B6]/60 rounded-lg text-xs text-[#1E1820] space-y-1">
                 <span className="font-bold flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  <Sparkles className="w-3.5 h-3.5 text-[#A28089]" />
                   Advisory AI Inspection:
                 </span>
-                <p className="text-[11px] text-purple-800 leading-tight">
+                <p className="text-[11px] text-[#1E1820] leading-tight">
                   Upon submission, Gemini AI will generate an advisory criteria checklist. Final milestone release decision remains with the client.
                 </p>
               </div>
@@ -2872,7 +2912,7 @@ function FreelancerDashboardContent() {
             {/* Modal Scrollable Body */}
             <div className="p-6 overflow-y-auto space-y-6">
               {/* Highlight Metrics Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-blue-50/50 border border-blue-100">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-[#EDF7F6] border border-[#9DF9EF]">
                 <div>
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
                     Total Escrow Budget

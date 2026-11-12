@@ -95,7 +95,7 @@ export default function DisputeWorkspacePage() {
           <p className="text-xs text-gray-500 mt-2 mb-6">
             The escrow contract ID &quot;{contractId}&quot; does not exist or has expired in demo state.
           </p>
-          <Link href="/client/dashboard" className="inline-flex items-center gap-2 text-xs font-bold text-[#0070E0]">
+          <Link href="/client/dashboard" className="inline-flex items-center gap-2 text-xs font-bold text-[#0EA5B7]">
             <ArrowLeft className="w-4 h-4" /> Return to Dashboard
           </Link>
         </Card>
@@ -238,7 +238,7 @@ export default function DisputeWorkspacePage() {
         <div className="flex items-center justify-between">
           <Link
             href={dashboardHref}
-            className="inline-flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-[#0070E0] transition-colors"
+            className="inline-flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-[#0EA5B7] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Dashboard
@@ -259,7 +259,7 @@ export default function DisputeWorkspacePage() {
                 </span>
                 <span className="text-xs text-gray-400 font-mono">#{contract.id}</span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-[#003087] tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1E1820] tracking-tight">
                 {contract.projectTitle}
               </h1>
               <p className="text-xs text-gray-500 mt-1">
@@ -270,7 +270,7 @@ export default function DisputeWorkspacePage() {
 
             <div className="text-left sm:text-right shrink-0">
               <span className="text-xs text-gray-400 block font-medium">Total Escrow Value</span>
-              <span className="text-2xl font-extrabold text-[#003087]">
+              <span className="text-2xl font-extrabold text-[#1E1820]">
                 {formatCurrency(contract.totalBudget, contract.currency)}
               </span>
             </div>
@@ -300,7 +300,7 @@ export default function DisputeWorkspacePage() {
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value as DisputeCategory)}
-                    className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                    className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#51E2F5]"
                   >
                     <option value="QUALITY_DEFICIENCY">Quality Deficiency &amp; Bug Density</option>
                     <option value="MISSED_DEADLINE">Missed Milestone Deadline</option>
@@ -316,7 +316,7 @@ export default function DisputeWorkspacePage() {
                   <select
                     value={selectedMilestoneId}
                     onChange={(e) => setSelectedMilestoneId(e.target.value)}
-                    className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                    className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#51E2F5]"
                   >
                     <option value="">Entire Project / Multiple Milestones</option>
                     {contract.milestones.map((m) => (
@@ -430,7 +430,7 @@ export default function DisputeWorkspacePage() {
             <div className="bg-white border border-gray-100 rounded-3xl p-6 shadow-xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0070E0] flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-[#EDF7F6] text-[#0EA5B7] flex items-center justify-center shrink-0">
                     <ShieldCheck className="w-5 h-5" />
                   </div>
                   <div>
@@ -461,18 +461,18 @@ export default function DisputeWorkspacePage() {
 
               {/* Progress Steps */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-4 text-xs font-semibold">
-                <div className="p-2.5 rounded-xl bg-blue-50 text-[#0070E0] flex items-center gap-2">
+                <div className="p-2.5 rounded-xl bg-[#EDF7F6] text-[#0EA5B7] flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                   <span>1. Dispute Lodged</span>
                 </div>
                 <div className={`p-2.5 rounded-xl flex items-center gap-2 ${
-                  dispute.aiRecommendation ? "bg-blue-50 text-[#0070E0]" : "bg-gray-50 text-gray-400"
+                  dispute.aiRecommendation ? "bg-[#EDF7F6] text-[#0EA5B7]" : "bg-gray-50 text-gray-400"
                 }`}>
                   <CheckCircle2 className={`w-4 h-4 shrink-0 ${dispute.aiRecommendation ? "text-emerald-500" : "text-gray-300"}`} />
                   <span>2. AI Advisory Report</span>
                 </div>
                 <div className={`p-2.5 rounded-xl flex items-center gap-2 ${
-                  dispute.negotiationHistory.length > 0 || dispute.status === "RESOLVED" ? "bg-blue-50 text-[#0070E0]" : "bg-gray-50 text-gray-400"
+                  dispute.negotiationHistory.length > 0 || dispute.status === "RESOLVED" ? "bg-[#EDF7F6] text-[#0EA5B7]" : "bg-gray-50 text-gray-400"
                 }`}>
                   <CheckCircle2 className={`w-4 h-4 shrink-0 ${dispute.negotiationHistory.length > 0 || dispute.status === "RESOLVED" ? "text-emerald-500" : "text-gray-300"}`} />
                   <span>3. Mutual Consensus</span>
@@ -488,17 +488,17 @@ export default function DisputeWorkspacePage() {
 
             {/* SECTION 1: AI INVESTIGATION REPORT & ADVISORY RECOMMENDATION */}
             {dispute.aiRecommendation && (
-              <Card className="border-blue-100 bg-white rounded-3xl overflow-hidden shadow-xs">
-                <CardHeader className="bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border-b border-blue-100">
+              <Card className="border-[#9DF9EF] bg-white rounded-3xl overflow-hidden shadow-xs">
+                <CardHeader className="bg-gradient-to-r from-[#9DF9EF]/35 to-[#FFA8B6]/25 border-b border-[#9DF9EF]">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-[#0070E0] text-white flex items-center justify-center shadow-xs">
+                      <div className="w-10 h-10 rounded-xl bg-[#51E2F5] text-[#1E1820] flex items-center justify-center shadow-xs">
                         <Sparkles className="w-5 h-5" />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <CardTitle className="text-lg text-[#003087]">AI Advisory Resolution Report</CardTitle>
-                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-[#0070E0]">
+                          <CardTitle className="text-lg text-[#1E1820]">AI Advisory Resolution Report</CardTitle>
+                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-[#0EA5B7]">
                             DEMO ADVISORY
                           </span>
                         </div>
@@ -533,12 +533,12 @@ export default function DisputeWorkspacePage() {
                       </p>
                     </div>
 
-                    <div className="p-5 rounded-2xl bg-blue-50/40 border border-blue-100">
+                    <div className="p-5 rounded-2xl bg-[#EDF7F6] border border-[#9DF9EF]">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-[#003087]">Client Refund (Incomplete Scope)</span>
-                        <Building className="w-4 h-4 text-[#0070E0]" />
+                        <span className="text-xs font-bold text-[#1E1820]">Client Refund (Incomplete Scope)</span>
+                        <Building className="w-4 h-4 text-[#0EA5B7]" />
                       </div>
-                      <span className="text-3xl font-extrabold text-[#003087]">
+                      <span className="text-3xl font-extrabold text-[#1E1820]">
                         {formatCurrency(dispute.aiRecommendation.clientAmount, dispute.aiRecommendation.currency)}
                       </span>
                       <p className="text-xs text-gray-600 mt-2 leading-relaxed">
@@ -656,7 +656,7 @@ export default function DisputeWorkspacePage() {
                           key={item.id}
                           className={`p-4 rounded-2xl border transition-all ${
                             item.status === "PENDING"
-                              ? "border-blue-200 bg-blue-50/20"
+                              ? "border-[#9DF9EF] bg-[#EDF7F6]/20"
                               : item.status === "ACCEPTED"
                               ? "border-emerald-200 bg-emerald-50/20"
                               : "border-gray-100 bg-gray-50/50"
@@ -664,7 +664,7 @@ export default function DisputeWorkspacePage() {
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-[#003087]">
+                              <span className="text-xs font-bold text-[#1E1820]">
                                 {item.offeredByName} ({item.offeredBy})
                               </span>
                               <Badge
@@ -798,12 +798,12 @@ export default function DisputeWorkspacePage() {
                   <div>
                     <span className="text-[11px] text-gray-400 block font-medium">Hiring Client Contact</span>
                     <strong className="text-xs text-gray-800 block">{contract.clientName}</strong>
-                    <span className="text-xs text-[#0070E0] font-mono">contact@{contract.clientName.toLowerCase().replace(/\s+/g, "")}.com</span>
+                    <span className="text-xs text-[#0EA5B7] font-mono">contact@{contract.clientName.toLowerCase().replace(/\s+/g, "")}.com</span>
                   </div>
                   <div>
                     <span className="text-[11px] text-gray-400 block font-medium">Freelance Talent Contact</span>
                     <strong className="text-xs text-gray-800 block">{contract.freelancerName}</strong>
-                    <span className="text-xs text-[#0070E0] font-mono">{contract?.freelancerName || "Freelancer"}</span>
+                    <span className="text-xs text-[#0EA5B7] font-mono">{contract?.freelancerName || "Freelancer"}</span>
                   </div>
                 </div>
 
@@ -811,7 +811,7 @@ export default function DisputeWorkspacePage() {
                 {dispute.finalSettlement ? (
                   <div className="bg-white p-5 rounded-2xl border border-gray-100 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-[#003087]">Pending Final Settlement Terms</span>
+                      <span className="text-xs font-bold text-[#1E1820]">Pending Final Settlement Terms</span>
                       <Badge variant="warning" size="sm">Awaiting Talent Consent</Badge>
                     </div>
                     <div className="grid grid-cols-2 gap-3 text-xs">
@@ -823,7 +823,7 @@ export default function DisputeWorkspacePage() {
                       </div>
                       <div>
                         <span className="text-gray-400 block">Client Refund:</span>
-                        <strong className="text-sm text-[#0070E0]">
+                        <strong className="text-sm text-[#0EA5B7]">
                           {formatCurrency(dispute.finalSettlement.clientAmount, dispute.finalSettlement.currency)}
                         </strong>
                       </div>
@@ -921,7 +921,7 @@ export default function DisputeWorkspacePage() {
                   </div>
                   <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-2xs">
                     <span className="text-xs text-gray-400 block font-medium">Refunded to Client</span>
-                    <span className="text-2xl font-extrabold text-[#003087]">
+                    <span className="text-2xl font-extrabold text-[#1E1820]">
                       {formatCurrency(dispute.resolution.clientAmount, dispute.resolution.currency)}
                     </span>
                   </div>

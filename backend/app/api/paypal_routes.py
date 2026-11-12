@@ -213,8 +213,9 @@ def create_escrow_order_route(
         )
 
     flow_tag = "redir" if (payload.return_url and payload.cancel_url) else "sdk"
+    client_tag = (paypal.client_id or paypal.mode or "mock")[:8]
     idem_key = payload.idempotency_key or build_idempotency_key(
-        "order", contract.id, paypal.escrow_intent, flow_tag, f"{Decimal(str(contract.total_budget)):.2f}"
+        "order", contract.id, paypal.escrow_intent, flow_tag, client_tag, f"{Decimal(str(contract.total_budget)):.2f}"
     )
 
     # Idempotent replay check

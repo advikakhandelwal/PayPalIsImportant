@@ -65,15 +65,15 @@ export const ContractChatPanel: React.FC<ContractChatPanelProps> = ({
     <div className="pt-4 border-t border-gray-100 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-[#0070E0]" />
-          <h3 className="text-xs font-bold text-[#003087] uppercase tracking-wider">
+          <MessageSquare className="w-4 h-4 text-[#0EA5B7]" />
+          <h3 className="text-xs font-bold text-[#1E1820] uppercase tracking-wider">
             Direct Project Discussion with {counterpartyName} ({counterpartyRoleLabel})
           </h3>
         </div>
         <button
           type="button"
           onClick={loadMessages}
-          className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-[#0070E0] cursor-pointer"
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-[#0EA5B7] cursor-pointer"
           title="Refresh messages"
         >
           <RefreshCw className={`w-3 h-3 ${isLoading ? "animate-spin" : ""}`} />
@@ -98,7 +98,7 @@ export const ContractChatPanel: React.FC<ContractChatPanelProps> = ({
                   <div
                     className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs shadow-2xs ${
                       isMe
-                        ? "bg-[#0070E0] text-white"
+                        ? "bg-[#51E2F5] text-[#1E1820]"
                         : "bg-white border border-gray-200 text-gray-800"
                     }`}
                   >
@@ -144,7 +144,7 @@ export const ContractChatPanel: React.FC<ContractChatPanelProps> = ({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder={`Message ${counterpartyName}...`}
-            className="flex-1 h-9 px-3.5 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+            className="flex-1 h-9 px-3.5 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#51E2F5]"
           />
           <Button type="submit" variant="primary" size="sm" disabled={isSending || !draft.trim()}>
             <Send className="w-3.5 h-3.5 mr-1" />

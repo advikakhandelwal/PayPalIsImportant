@@ -84,11 +84,11 @@ function MessagesInboxContent() {
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-white border border-gray-100 shadow-xs">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-[#0070E0] text-white flex items-center justify-center shadow-xs">
+          <div className="w-12 h-12 rounded-2xl bg-[#51E2F5] text-[#1E1820] flex items-center justify-center shadow-xs">
             <MessageSquare className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold text-[#003087]">Unified Messages Inbox</h1>
+            <h1 className="text-2xl font-extrabold text-[#1E1820]">Unified Messages Inbox</h1>
             <p className="text-xs text-gray-500">
               All client &amp; freelancer conversations across every contract in one place.
             </p>
@@ -98,7 +98,7 @@ function MessagesInboxContent() {
         <button
           type="button"
           onClick={loadInbox}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold bg-blue-50 text-[#0070E0] hover:bg-blue-100 border border-blue-200 cursor-pointer self-start sm:self-auto"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold bg-[#EDF7F6] text-[#0EA5B7] hover:bg-blue-100 border border-[#9DF9EF] cursor-pointer self-start sm:self-auto"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
           Refresh Inbox
@@ -121,7 +121,7 @@ function MessagesInboxContent() {
           <div className="pt-2">
             <Link
               href={dashboardHref}
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0070E0] text-white text-xs font-bold hover:bg-[#005bb8]"
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#51E2F5] text-[#1E1820] text-xs font-bold hover:bg-[#005bb8]"
             >
               <span>Go to Dashboard</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -134,7 +134,7 @@ function MessagesInboxContent() {
           <div className="lg:col-span-4 space-y-3">
             <Card className="p-3.5 rounded-2xl border border-gray-200 bg-white space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-extrabold text-[#003087] uppercase tracking-wider">
+                <span className="text-xs font-extrabold text-[#1E1820] uppercase tracking-wider">
                   Conversations ({filteredThreads.length}/{threads.length})
                 </span>
               </div>
@@ -145,7 +145,7 @@ function MessagesInboxContent() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search project, person, or message..."
-                  className="w-full h-9 pl-8 pr-3 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                  className="w-full h-9 pl-8 pr-3 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#51E2F5]"
                 />
               </div>
             </Card>
@@ -161,16 +161,16 @@ function MessagesInboxContent() {
                     onClick={() => setSelectedContractId(t.contractId)}
                     className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer ${
                       isSelected
-                        ? "border-[#0070E0] bg-blue-50/50 ring-2 ring-[#0070E0]/20 shadow-xs"
-                        : "border-gray-200 bg-white hover:border-blue-200"
+                        ? "border-[#51E2F5] bg-[#EDF7F6] ring-2 ring-[#51E2F5]/20 shadow-xs"
+                        : "border-gray-200 bg-white hover:border-[#9DF9EF]"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <div className="flex items-center gap-1.5 min-w-0">
                         {t.counterpartyRole === "CLIENT" ? (
-                          <Building className="w-3.5 h-3.5 text-[#003087] shrink-0" />
+                          <Building className="w-3.5 h-3.5 text-[#1E1820] shrink-0" />
                         ) : (
-                          <User className="w-3.5 h-3.5 text-[#0070E0] shrink-0" />
+                          <User className="w-3.5 h-3.5 text-[#0EA5B7] shrink-0" />
                         )}
                         <span className="font-bold text-xs text-gray-900 truncate">
                           {t.counterpartyName}
@@ -181,7 +181,7 @@ function MessagesInboxContent() {
                       </span>
                     </div>
 
-                    <p className="text-xs font-semibold text-[#003087] line-clamp-1 mb-1">
+                    <p className="text-xs font-semibold text-[#1E1820] line-clamp-1 mb-1">
                       {t.projectTitle}
                     </p>
 
@@ -238,7 +238,7 @@ function MessagesInboxContent() {
                     </Link>
                     <Link
                       href={dashboardHref}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50 hover:bg-blue-100 text-[#0070E0] border border-blue-200"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#EDF7F6] hover:bg-blue-100 text-[#0EA5B7] border border-[#9DF9EF]"
                     >
                       <span>Open Contract</span>
                       <ArrowRight className="w-3.5 h-3.5" />

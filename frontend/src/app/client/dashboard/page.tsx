@@ -296,6 +296,7 @@ function ClientDashboardContent() {
       .filter((c) => c.escrowStatus === "COMPLETED" || c.escrowStatus === "REFUNDED")
       .map((c) => c.projectId)
   );
+  const contractedProjectIds = new Set(contracts.map((c) => c.projectId));
   const allClientProjectIds = projects
     .filter((p) => p.clientId === currentUser.id)
     .map((p) => p.id);
@@ -308,7 +309,8 @@ function ClientDashboardContent() {
       (p) =>
         p.clientId === currentUser.id &&
         p.status !== "COMPLETED" &&
-        !completedContractProjectIds.has(p.id)
+        p.status !== "IN_PROGRESS" &&
+        !contractedProjectIds.has(p.id)
     )
     .map((p) => p.id);
   const localApplications = applications.filter(
@@ -415,11 +417,10 @@ function ClientDashboardContent() {
 
   // Contracts filtered for this client
   const myContracts = contracts.filter((c) => c.clientId === currentUser.id);
-  // For the contracts tab: use a selected contract (default to first owned one)
+  const activeOnlyContracts = myContracts.filter(
+    (c) => c.escrowStatus !== "COMPLETED" && c.escrowStatus !== "REFUNDED"
+  );
   const [selectedContractId, setSelectedContractId] = useState<string>("");
-  const selectedContractForTab =
-    myContracts.find((c) => c.id === selectedContractId) ?? myContracts[0] ?? activeContract;
-  const escrowStatusInfo = getEscrowStatusInfo(selectedContractForTab.escrowStatus);
 
   // PayPal Escrow Funding & Audit State
   const [isFundingEscrow, setIsFundingEscrow] = useState(false);
@@ -428,7 +429,7 @@ function ClientDashboardContent() {
   const [paypalErrorMsg, setPaypalErrorMsg] = useState("");
   const [paypalTxs, setPaypalTxs] = useState<any[]>([]);
   const [contractSearch, setContractSearch] = useState("");
-  const [contractFilter, setContractFilter] = useState<"ALL" | "AWAITING_AUTHORIZATION" | "ACTIVE" | "COMPLETED">("ALL");
+  const [contractFilter, setContractFilter] = useState<"ALL" | "AWAITING_AUTHORIZATION" | "ACTIVE" | "COMPLETED">("ACTIVE");
   const [pendingEscrowCheckout, setPendingEscrowCheckout] = useState<{
     contractId: string;
     projectTitle: string;
@@ -477,10 +478,24 @@ function ClientDashboardContent() {
       c.id.toLowerCase().includes(q);
     if (!matchesSearch) return false;
     if (contractFilter === "AWAITING_AUTHORIZATION") return c.escrowStatus === "AWAITING_AUTHORIZATION";
-    if (contractFilter === "ACTIVE") return c.escrowStatus === "HELD_IN_ESCROW" || c.escrowStatus === "PARTIALLY_RELEASED";
-    if (contractFilter === "COMPLETED") return c.escrowStatus === "COMPLETED";
+    if (contractFilter === "ACTIVE") {
+      return (
+        c.escrowStatus === "AWAITING_AUTHORIZATION" ||
+        c.escrowStatus === "HELD_IN_ESCROW" ||
+        c.escrowStatus === "PARTIALLY_RELEASED"
+      );
+    }
+    if (contractFilter === "COMPLETED") return c.escrowStatus === "COMPLETED" || c.escrowStatus === "REFUNDED";
     return true;
   });
+
+  const selectedContractForTab =
+    filteredContracts.find((c) => c.id === selectedContractId) ??
+    filteredContracts[0] ??
+    activeOnlyContracts[0] ??
+    myContracts[0] ??
+    activeContract;
+  const escrowStatusInfo = getEscrowStatusInfo(selectedContractForTab.escrowStatus);
 
   // Handle PayPal Sandbox checkout redirect return (?paypal=success&token=...&contractId=...)
   useEffect(() => {
@@ -1072,15 +1087,20 @@ function ClientDashboardContent() {
     setTimeout(() => setProfileSuccessMsg(""), 3000);
   };
 
-  // Applications filtered by status (Ongoing / Completed / Rejected / All) & AI Shortlist
+  // Applications filtered by status (Ongoing / Completed / All) & AI Shortlist
   const isProjectCompleted = (projectId: string) => {
     const p = projects.find((pr) => pr.id === projectId);
     return p?.status === "COMPLETED" || completedContractProjectIds.has(projectId);
   };
+  const isProjectInProgress = (projectId: string) => {
+    const p = projects.find((pr) => pr.id === projectId);
+    return p?.status === "IN_PROGRESS" || contractedProjectIds.has(projectId);
+  };
   const statusScopedApplications = allClientApplications.filter((app) => {
     if (filterByProjectId !== "ALL" && app.projectId !== filterByProjectId) return false;
     const projDone = isProjectCompleted(app.projectId);
-    if (appStatusFilter === "ONGOING" && projDone) return false;
+    const projInProgress = isProjectInProgress(app.projectId);
+    if (appStatusFilter === "ONGOING" && (projDone || projInProgress)) return false;
     if (appStatusFilter === "COMPLETED" && !projDone) return false;
     const q = appSearchQuery.trim().toLowerCase();
     if (q) {
@@ -1153,7 +1173,7 @@ function ClientDashboardContent() {
       {/* ── Top Header Banner ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-white border border-gray-100 shadow-xs">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#003087] flex items-center justify-center font-bold text-lg border border-blue-100/60 shadow-xs">
+          <div className="w-12 h-12 rounded-2xl bg-[#EDF7F6] text-[#1E1820] flex items-center justify-center font-bold text-lg border border-[#9DF9EF]/60 shadow-xs">
             {currentUser.companyName
               ? currentUser.companyName.charAt(0).toUpperCase()
               : currentUser.name
@@ -1162,7 +1182,7 @@ function ClientDashboardContent() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-extrabold text-[#003087] tracking-tight">
+              <h1 className="text-xl font-extrabold text-[#1E1820] tracking-tight">
                 {currentUser.companyName || currentUser.name || "Client Enterprise"}
               </h1>
               <Badge variant="paypal" size="sm">Client Mode</Badge>
@@ -1190,7 +1210,7 @@ function ClientDashboardContent() {
             onClick={() => setActiveTab("overview")}
             className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-full transition-all cursor-pointer ${
               activeTab === "overview"
-                ? "bg-[#003087] text-white shadow-xs"
+                ? "bg-[#1E1820] text-white shadow-xs"
                 : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
             }`}
           >
@@ -1202,7 +1222,7 @@ function ClientDashboardContent() {
             onClick={() => setActiveTab("projects")}
             className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-full transition-all cursor-pointer ${
               activeTab === "projects"
-                ? "bg-[#003087] text-white shadow-xs"
+                ? "bg-[#1E1820] text-white shadow-xs"
                 : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
             }`}
           >
@@ -1217,7 +1237,7 @@ function ClientDashboardContent() {
             }}
             className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-full transition-all cursor-pointer ${
               activeTab === "post"
-                ? "bg-[#0070E0] text-white btn-shadow"
+                ? "bg-[#51E2F5] text-[#1E1820] btn-shadow"
                 : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
             }`}
           >
@@ -1232,7 +1252,7 @@ function ClientDashboardContent() {
             }}
             className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-full transition-all cursor-pointer ${
               activeTab === "proposals"
-                ? "bg-[#003087] text-white shadow-xs"
+                ? "bg-[#1E1820] text-white shadow-xs"
                 : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
             }`}
           >
@@ -1244,7 +1264,7 @@ function ClientDashboardContent() {
             onClick={() => setActiveTab("contracts")}
             className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-full transition-all cursor-pointer ${
               activeTab === "contracts"
-                ? "bg-[#003087] text-white shadow-xs"
+                ? "bg-[#1E1820] text-white shadow-xs"
                 : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
             }`}
           >
@@ -1256,7 +1276,7 @@ function ClientDashboardContent() {
             onClick={() => setActiveTab("profile")}
             className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-full transition-all cursor-pointer ${
               activeTab === "profile"
-                ? "bg-[#003087] text-white shadow-xs"
+                ? "bg-[#1E1820] text-white shadow-xs"
                 : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
             }`}
           >
@@ -1290,7 +1310,7 @@ function ClientDashboardContent() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <Card className="p-5 border-gray-100 card-hover bg-white">
               <span className="text-xs text-gray-500 font-medium block">Total Projects Posted</span>
-              <span className="text-2xl sm:text-3xl font-extrabold text-[#003087] mt-1 block">
+              <span className="text-2xl sm:text-3xl font-extrabold text-[#1E1820] mt-1 block">
                 {totalProjectsCount}
               </span>
               <span className="text-[11px] text-gray-400 mt-1 block">All-time listings</span>
@@ -1298,7 +1318,7 @@ function ClientDashboardContent() {
 
             <Card className="p-5 border-gray-100 card-hover bg-white">
               <span className="text-xs text-gray-500 font-medium block">Open Projects</span>
-              <span className="text-2xl sm:text-3xl font-extrabold text-[#0070E0] mt-1 block">
+              <span className="text-2xl sm:text-3xl font-extrabold text-[#0EA5B7] mt-1 block">
                 {openProjectsCount}
               </span>
               <span className="text-[11px] text-emerald-600 font-semibold mt-1 block">Accepting proposals</span>
@@ -1306,10 +1326,10 @@ function ClientDashboardContent() {
 
             <Card className="p-5 border-gray-100 card-hover bg-white">
               <span className="text-xs text-gray-500 font-medium block">Projects In Progress</span>
-              <span className="text-2xl sm:text-3xl font-extrabold text-purple-600 mt-1 block">
+              <span className="text-2xl sm:text-3xl font-extrabold text-[#A28089] mt-1 block">
                 {inProgressProjectsCount}
               </span>
-              <span className="text-[11px] text-purple-700 font-semibold mt-1 block">Active milestone delivery</span>
+              <span className="text-[11px] text-[#5C4B51] font-semibold mt-1 block">Active milestone delivery</span>
             </Card>
 
             <Card className="p-5 border-gray-100 card-hover bg-white">
@@ -1322,12 +1342,12 @@ function ClientDashboardContent() {
           </div>
 
           {/* Quick Action Post Project Banner */}
-          <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-[#9DF9EF] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#0070E0] block mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#0EA5B7] block mb-1">
                 Milestone Escrow Architecture
               </span>
-              <h3 className="text-xl font-bold text-[#003087]">Ready to commission new work?</h3>
+              <h3 className="text-xl font-bold text-[#1E1820]">Ready to commission new work?</h3>
               <p className="text-xs text-gray-600 max-w-xl mt-1">
                 Define deliverables, configure milestone splits, and invite verified talent with upfront escrow security.
               </p>
@@ -1357,7 +1377,7 @@ function ClientDashboardContent() {
                 </div>
                 <button
                   onClick={() => setActiveTab("projects")}
-                  className="text-xs font-bold text-[#0070E0] hover:underline cursor-pointer"
+                  className="text-xs font-bold text-[#0EA5B7] hover:underline cursor-pointer"
                 >
                   View All ({myProjects.length})
                 </button>
@@ -1366,7 +1386,7 @@ function ClientDashboardContent() {
                 {myProjects.slice(0, 3).map((proj) => (
                   <div
                     key={proj.id}
-                    className="p-3.5 rounded-xl border border-gray-100 hover:border-blue-200 transition-colors bg-gray-50/50 flex items-center justify-between gap-3 group"
+                    className="p-3.5 rounded-xl border border-gray-100 hover:border-[#9DF9EF] transition-colors bg-gray-50/50 flex items-center justify-between gap-3 group"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -1374,9 +1394,9 @@ function ClientDashboardContent() {
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                             proj.status === "OPEN"
-                              ? "bg-blue-100 text-[#0070E0]"
+                              ? "bg-blue-100 text-[#0EA5B7]"
                               : proj.status === "IN_PROGRESS"
-                              ? "bg-purple-100 text-purple-700"
+                              ? "bg-purple-100 text-[#5C4B51]"
                               : "bg-emerald-100 text-emerald-700"
                           }`}
                         >
@@ -1410,7 +1430,7 @@ function ClientDashboardContent() {
                 </div>
                 <button
                   onClick={() => setActiveTab("proposals")}
-                  className="text-xs font-bold text-[#0070E0] hover:underline cursor-pointer"
+                  className="text-xs font-bold text-[#0EA5B7] hover:underline cursor-pointer"
                 >
                   Applicant Inbox ({localApplications.length})
                 </button>
@@ -1419,13 +1439,13 @@ function ClientDashboardContent() {
                 {localApplications.slice(0, 3).map((app) => (
                   <div
                     key={app.id}
-                    className="p-3.5 rounded-xl border border-gray-100 hover:border-purple-200 transition-colors bg-gray-50/50 flex items-center justify-between gap-3"
+                    className="p-3.5 rounded-xl border border-gray-100 hover:border-[#FFA8B6]/60 transition-colors bg-gray-50/50 flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-gray-900">{app.freelancerName}</span>
                         {app.aiRecommendation && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 flex items-center gap-1">
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-[#5C4B51] flex items-center gap-1">
                             <Sparkles className="w-2.5 h-2.5" />
                             {app.aiRecommendation.fitScore}% Fit
                           </span>
@@ -1461,7 +1481,7 @@ function ClientDashboardContent() {
         <div className="space-y-6 animate-fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-extrabold text-[#003087] tracking-tight">My Projects</h2>
+              <h2 className="text-2xl font-extrabold text-[#1E1820] tracking-tight">My Projects</h2>
               <p className="text-xs text-gray-500">
                 Manage all project postings, view applications, and inspect milestone structures.
               </p>
@@ -1513,7 +1533,7 @@ function ClientDashboardContent() {
                         <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider block">
                           Total Budget
                         </span>
-                        <span className="text-xl font-extrabold text-[#003087]">
+                        <span className="text-xl font-extrabold text-[#1E1820]">
                           {formatCurrency(proj.totalBudget, proj.currency)}
                         </span>
                       </div>
@@ -1532,7 +1552,7 @@ function ClientDashboardContent() {
                         {proj.requiredSkills.map((skill, idx) => (
                           <span
                             key={idx}
-                            className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-[#0070E0] border border-blue-100"
+                            className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#EDF7F6] text-[#0EA5B7] border border-[#9DF9EF]"
                           >
                             {skill}
                           </span>
@@ -1558,7 +1578,7 @@ function ClientDashboardContent() {
                           >
                             <div className="flex items-center justify-between">
                               <span className="font-bold text-gray-800 truncate">Step {m.stepNumber}: {m.title}</span>
-                              <span className="font-bold text-[#0070E0]">{m.percentage}%</span>
+                              <span className="font-bold text-[#0EA5B7]">{m.percentage}%</span>
                             </div>
                             <span className="text-gray-500 text-[11px] block">
                               {formatCurrency(m.paymentAmount, m.currency)} • Due {formatDate(m.deadline)}
@@ -1622,7 +1642,7 @@ function ClientDashboardContent() {
         <div className="space-y-6 animate-fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-2xl font-extrabold text-[#003087] tracking-tight">
+              <h2 className="text-2xl font-extrabold text-[#1E1820] tracking-tight">
                 {isEditingExisting ? "Edit Project Brief" : "Create New Project"}
               </h2>
               <p className="text-xs text-gray-500">
@@ -1655,7 +1675,7 @@ function ClientDashboardContent() {
 
                 {/* Section A: Project Identity */}
                 <div className="space-y-4">
-                  <h3 className="text-xs font-bold text-[#003087] uppercase tracking-wider">
+                  <h3 className="text-xs font-bold text-[#1E1820] uppercase tracking-wider">
                     1. Project Specifications
                   </h3>
 
@@ -1676,7 +1696,7 @@ function ClientDashboardContent() {
                       <select
                         value={newDomain}
                         onChange={(e) => setNewDomain(e.target.value)}
-                        className="w-full h-11 px-4 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0070E0]"
+                        className="w-full h-11 px-4 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#51E2F5]"
                       >
                         <option value="Full-Stack Development">Full-Stack Development</option>
                         <option value="Frontend Engineering">Frontend Engineering</option>
@@ -1708,7 +1728,7 @@ function ClientDashboardContent() {
                       </label>
                       <div className="w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm font-semibold text-gray-700 flex items-center justify-between">
                         <span>USD ($)</span>
-                        <span className="text-[10px] font-bold uppercase text-[#0070E0] bg-blue-50 px-2 py-0.5 rounded-full">
+                        <span className="text-[10px] font-bold uppercase text-[#0EA5B7] bg-[#EDF7F6] px-2 py-0.5 rounded-full">
                           PayPal Standard
                         </span>
                       </div>
@@ -1735,7 +1755,7 @@ function ClientDashboardContent() {
                             onClick={() => setNewExperienceLevel(lvl)}
                             className={`py-2.5 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
                               newExperienceLevel === lvl
-                                ? "bg-blue-50 border-[#0070E0] text-[#0070E0] ring-1 ring-[#0070E0]"
+                                ? "bg-[#EDF7F6] border-[#51E2F5] text-[#0EA5B7] ring-1 ring-[#51E2F5]"
                                 : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
                             }`}
                           >
@@ -1758,7 +1778,7 @@ function ClientDashboardContent() {
 
                 {/* Section B: Candidate Skills & Extra Requirements */}
                 <div className="space-y-4 pt-4 border-t border-gray-100">
-                  <h3 className="text-xs font-bold text-[#003087] uppercase tracking-wider">
+                  <h3 className="text-xs font-bold text-[#1E1820] uppercase tracking-wider">
                     2. Candidate Requirements &amp; Terms
                   </h3>
 
@@ -1794,7 +1814,7 @@ function ClientDashboardContent() {
                         {newSkills.map((skill) => (
                           <span
                             key={skill}
-                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-[#0070E0] border border-blue-200 text-xs font-semibold"
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EDF7F6] text-[#0EA5B7] border border-[#9DF9EF] text-xs font-semibold"
                           >
                             <span>{skill}</span>
                             <button
@@ -1840,7 +1860,7 @@ function ClientDashboardContent() {
                 <div className="space-y-4 pt-4 border-t border-gray-100">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
-                      <h3 className="text-xs font-bold text-[#003087] uppercase tracking-wider">
+                      <h3 className="text-xs font-bold text-[#1E1820] uppercase tracking-wider">
                         3. Dynamic Milestone Builder <span className="text-rose-500 font-bold ml-1">*</span>
                       </h3>
                       <p className="text-xs text-gray-500">
@@ -1875,7 +1895,7 @@ function ClientDashboardContent() {
                           ? "bg-emerald-500"
                           : totalPercentage > 100
                           ? "bg-rose-500"
-                          : "bg-[#0070E0]"
+                          : "bg-[#51E2F5]"
                       }`}
                       style={{ width: `${Math.min(100, totalPercentage)}%` }}
                     />
@@ -1889,7 +1909,7 @@ function ClientDashboardContent() {
                         className="p-4 rounded-2xl border border-gray-200 bg-gray-50/70 space-y-3 animate-slide-up shadow-2xs"
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-extrabold text-[#003087] bg-white px-3 py-1 rounded-full border border-gray-200">
+                          <span className="text-xs font-extrabold text-[#1E1820] bg-white px-3 py-1 rounded-full border border-gray-200">
                             Step {idx + 1}
                           </span>
                           {newMilestones.length > 1 && (
@@ -1943,8 +1963,8 @@ function ClientDashboardContent() {
                         {/* AI-Assisted Subtask Division Controls */}
                         <div className="pt-2 border-t border-gray-200/80">
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 text-xs text-[#003087] font-bold">
-                              <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                            <div className="flex items-center gap-1.5 text-xs text-[#1E1820] font-bold">
+                              <Sparkles className="w-3.5 h-3.5 text-[#A28089]" />
                               <span>AI-Assisted Subtask Division</span>
                               {m.subtasksApproved && (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
@@ -1956,10 +1976,10 @@ function ClientDashboardContent() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="text-[11px] h-7 px-2.5 bg-white text-[#0070E0] border-blue-200 hover:bg-blue-50"
+                              className="text-[11px] h-7 px-2.5 bg-white text-[#0EA5B7] border-[#9DF9EF] hover:bg-[#EDF7F6]"
                               onClick={() => handleGenerateAISubtasks(idx)}
                             >
-                              <Sparkles className="w-3 h-3 mr-1 text-purple-600" />
+                              <Sparkles className="w-3 h-3 mr-1 text-[#A28089]" />
                               {m.subtasks ? "Regenerate AI Subtasks" : "Generate AI Subtasks"}
                             </Button>
                           </div>
@@ -1983,14 +2003,14 @@ function ClientDashboardContent() {
                                     className="p-2 rounded-lg bg-gray-50 border border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs"
                                   >
                                     <div className="flex items-center gap-2">
-                                      <span className="font-extrabold text-[#003087] bg-white px-1.5 py-0.5 rounded text-[10px] border border-gray-200">
+                                      <span className="font-extrabold text-[#1E1820] bg-white px-1.5 py-0.5 rounded text-[10px] border border-gray-200">
                                         {st.stepNumber}
                                       </span>
                                       <span className="font-medium text-gray-800">{st.title}</span>
                                     </div>
                                     <div className="flex items-center gap-2 text-[11px] text-gray-500">
                                       <span>{st.percentageOfTotal}% of project</span>
-                                      <span className="font-bold text-[#003087]">
+                                      <span className="font-bold text-[#1E1820]">
                                         {formatCurrency(st.paymentAmount, newCurrency)}
                                       </span>
                                     </div>
@@ -2035,10 +2055,10 @@ function ClientDashboardContent() {
         <div className="space-y-6 animate-fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <span className="text-xs font-bold text-[#0070E0] uppercase tracking-wider block mb-1">
+              <span className="text-xs font-bold text-[#0EA5B7] uppercase tracking-wider block mb-1">
                 Step 2 of 2: Final Verification
               </span>
-              <h2 className="text-2xl font-extrabold text-[#003087] tracking-tight">Project Preview</h2>
+              <h2 className="text-2xl font-extrabold text-[#1E1820] tracking-tight">Project Preview</h2>
               <p className="text-xs text-gray-500">
                 Inspect all project specifications and milestone splits before publishing to the marketplace.
               </p>
@@ -2056,17 +2076,17 @@ function ClientDashboardContent() {
 
           <Card className="border-gray-200/90 bg-white shadow-xl overflow-hidden rounded-3xl">
             {/* Header info */}
-            <div className="p-6 sm:p-8 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="p-6 sm:p-8 bg-gradient-to-r from-[#9DF9EF]/30 to-[#FFA8B6]/20 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-[#0070E0]">
+                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-[#0EA5B7]">
                     {newDomain}
                   </span>
                   <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-700">
                     Ready to Publish
                   </span>
                 </div>
-                <h3 className="text-2xl font-extrabold text-[#003087] mt-1">{newTitle}</h3>
+                <h3 className="text-2xl font-extrabold text-[#1E1820] mt-1">{newTitle}</h3>
                 <p className="text-xs text-gray-500 mt-1">
                   Client: <strong className="text-gray-800">{currentUser.companyName || currentUser.name}</strong> • Target Deadline:{" "}
                   <strong className="text-gray-800">{formatDate(newDeadline)}</strong>
@@ -2075,7 +2095,7 @@ function ClientDashboardContent() {
 
               <div className="text-left sm:text-right">
                 <span className="text-xs text-gray-500 font-bold uppercase tracking-wider block">Total Project Value</span>
-                <span className="text-3xl font-extrabold text-[#003087]">
+                <span className="text-3xl font-extrabold text-[#1E1820]">
                   {formatCurrency(newTotalBudget, newCurrency)}
                 </span>
               </div>
@@ -2100,7 +2120,7 @@ function ClientDashboardContent() {
                     {newSkills.map((s) => (
                       <span
                         key={s}
-                        className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-white text-[#0070E0] border border-blue-200"
+                        className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-white text-[#0EA5B7] border border-[#9DF9EF]"
                       >
                         {s}
                       </span>
@@ -2110,7 +2130,7 @@ function ClientDashboardContent() {
 
                 <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
                   <span className="text-xs font-bold text-gray-500 block mb-1">Experience Requirement</span>
-                  <span className="text-sm font-bold text-[#003087]">{newExperienceLevel} Level</span>
+                  <span className="text-sm font-bold text-[#1E1820]">{newExperienceLevel} Level</span>
                   {newAdditionalRequirements && (
                     <p className="text-xs text-gray-600 mt-2 pt-2 border-t border-gray-200">
                       <strong>Additional terms:</strong> {newAdditionalRequirements}
@@ -2136,7 +2156,7 @@ function ClientDashboardContent() {
                     <div key={idx} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-blue-50 text-[#0070E0]">
+                          <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-[#EDF7F6] text-[#0EA5B7]">
                             Step {idx + 1}
                           </span>
                           <span className="text-sm font-bold text-gray-900">{m.title}</span>
@@ -2145,7 +2165,7 @@ function ClientDashboardContent() {
                       </div>
 
                       <div className="text-left sm:text-right shrink-0">
-                        <span className="text-sm font-extrabold text-[#003087] block">
+                        <span className="text-sm font-extrabold text-[#1E1820] block">
                           {formatCurrency(m.paymentAmount, newCurrency)} ({m.percentage}%)
                         </span>
                         <span className="text-xs text-gray-400">Due {formatDate(m.deadline)}</span>
@@ -2193,7 +2213,7 @@ function ClientDashboardContent() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <button
               onClick={() => setActiveTab("projects")}
-              className="text-xs font-bold text-[#0070E0] hover:underline flex items-center gap-1.5 cursor-pointer self-start"
+              className="text-xs font-bold text-[#0EA5B7] hover:underline flex items-center gap-1.5 cursor-pointer self-start"
             >
               <ArrowLeft className="w-4 h-4" />
               Back to My Projects
@@ -2243,18 +2263,18 @@ function ClientDashboardContent() {
 
           <Card className="border-gray-100 bg-white shadow-lg overflow-hidden rounded-3xl">
             {/* Header info */}
-            <div className="p-6 sm:p-8 bg-gradient-to-r from-blue-50/60 to-indigo-50/60 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="p-6 sm:p-8 bg-gradient-to-r from-[#9DF9EF]/30 to-[#FFA8B6]/20 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-[#0070E0]">
+                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-[#0EA5B7]">
                     {selectedProject.domain}
                   </span>
                   <span
                     className={`text-xs font-bold px-3 py-1 rounded-full ${
                       selectedProject.status === "OPEN"
-                        ? "bg-blue-100 text-[#0070E0]"
+                        ? "bg-blue-100 text-[#0EA5B7]"
                         : selectedProject.status === "IN_PROGRESS"
-                        ? "bg-purple-100 text-purple-700"
+                        ? "bg-purple-100 text-[#5C4B51]"
                         : "bg-emerald-100 text-emerald-700"
                     }`}
                   >
@@ -2262,7 +2282,7 @@ function ClientDashboardContent() {
                   </span>
                   <span className="text-xs text-gray-500 font-mono">ID: {selectedProject.id}</span>
                 </div>
-                <h2 className="text-2xl font-extrabold text-[#003087]">{selectedProject.title}</h2>
+                <h2 className="text-2xl font-extrabold text-[#1E1820]">{selectedProject.title}</h2>
                 <p className="text-xs text-gray-500 mt-1">
                   Posted {formatDate(selectedProject.createdAt)} • Target Completion: {formatDate(selectedProject.deadline)}
                 </p>
@@ -2270,7 +2290,7 @@ function ClientDashboardContent() {
 
               <div className="text-left sm:text-right">
                 <span className="text-xs text-gray-400 font-bold uppercase tracking-wider block">Total Project Value</span>
-                <span className="text-3xl font-extrabold text-[#003087]">
+                <span className="text-3xl font-extrabold text-[#1E1820]">
                   {formatCurrency(selectedProject.totalBudget, selectedProject.currency)}
                 </span>
               </div>
@@ -2295,7 +2315,7 @@ function ClientDashboardContent() {
                     {selectedProject.requiredSkills?.map((s) => (
                       <span
                         key={s}
-                        className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-white text-[#0070E0] border border-blue-200"
+                        className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-white text-[#0EA5B7] border border-[#9DF9EF]"
                       >
                         {s}
                       </span>
@@ -2305,7 +2325,7 @@ function ClientDashboardContent() {
 
                 <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
                   <span className="text-xs font-bold text-gray-500 block mb-1">Experience Level</span>
-                  <span className="text-sm font-bold text-[#003087]">
+                  <span className="text-sm font-bold text-[#1E1820]">
                     {selectedProject.experienceLevel || "Intermediate"}
                   </span>
                   {selectedProject.additionalRequirements && (
@@ -2357,7 +2377,7 @@ function ClientDashboardContent() {
                         key={ms.id}
                         className={`p-4 rounded-2xl border transition-all ${
                           ms.status === "ACTIVE" || ms.status === "SUBMITTED"
-                            ? "border-[#0070E0] bg-blue-50/20 ring-1 ring-[#0070E0]"
+                            ? "border-[#51E2F5] bg-[#EDF7F6]/20 ring-1 ring-[#51E2F5]"
                             : ms.status === "RELEASED"
                             ? "border-emerald-200 bg-emerald-50/20"
                             : "border-gray-200 bg-white"
@@ -2365,7 +2385,7 @@ function ClientDashboardContent() {
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-md bg-blue-50 text-[#0070E0]">
+                            <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-md bg-[#EDF7F6] text-[#0EA5B7]">
                               Step {ms.stepNumber}
                             </span>
                             <h5 className="text-sm font-bold text-gray-900">{ms.title}</h5>
@@ -2376,7 +2396,7 @@ function ClientDashboardContent() {
                         </div>
                         <p className="text-xs text-gray-500 mb-3">{ms.description}</p>
                         <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
-                          <span className="font-extrabold text-[#003087]">
+                          <span className="font-extrabold text-[#1E1820]">
                             {formatCurrency(ms.paymentAmount, ms.currency)} ({ms.percentage}%)
                           </span>
                           <span className="text-gray-400 font-medium">Due {formatDate(ms.deadline)}</span>
@@ -2400,7 +2420,7 @@ function ClientDashboardContent() {
         <div className="space-y-6 animate-fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-extrabold text-[#003087] tracking-tight">Applicant Inbox</h2>
+              <h2 className="text-2xl font-extrabold text-[#1E1820] tracking-tight">Applicant Inbox</h2>
               <p className="text-xs text-gray-500">
                 Review proposals with the choice of manual candidate review or AI-assisted shortlisting.
               </p>
@@ -2421,7 +2441,7 @@ function ClientDashboardContent() {
                     onClick={() => setAppStatusFilter(st.id)}
                     className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
                       appStatusFilter === st.id
-                        ? "bg-white text-[#003087] shadow-sm ring-1 ring-gray-200"
+                        ? "bg-white text-[#1E1820] shadow-sm ring-1 ring-gray-200"
                         : "text-gray-500 hover:text-gray-900"
                     }`}
                   >
@@ -2435,7 +2455,7 @@ function ClientDashboardContent() {
                   onClick={() => setProposalFilter("ALL")}
                   className={`px-3.5 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
                     proposalFilter === "ALL"
-                      ? "bg-white text-[#003087] shadow-sm ring-1 ring-gray-200"
+                      ? "bg-white text-[#1E1820] shadow-sm ring-1 ring-gray-200"
                       : "text-gray-500 hover:text-gray-900"
                   }`}
                 >
@@ -2445,11 +2465,11 @@ function ClientDashboardContent() {
                   onClick={() => setProposalFilter("AI_SHORTLIST")}
                   className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
                     proposalFilter === "AI_SHORTLIST"
-                      ? "bg-white text-purple-900 shadow-sm ring-1 ring-gray-200"
+                      ? "bg-white text-[#1E1820] shadow-sm ring-1 ring-gray-200"
                       : "text-gray-500 hover:text-gray-900"
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  <Sparkles className="w-3.5 h-3.5 text-[#A28089]" />
                   AI Shortlist
                 </button>
               </div>
@@ -2465,7 +2485,7 @@ function ClientDashboardContent() {
                 placeholder="Search applicants by name, project title, domain, or cover letter..."
                 value={appSearchQuery}
                 onChange={(e) => setAppSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 bg-white text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#0070E0]/30"
+                className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 bg-white text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#51E2F5]/30"
               />
             </div>
             <select
@@ -2493,7 +2513,7 @@ function ClientDashboardContent() {
 
           {/* Project Specific Filter Pills if set */}
           {filterByProjectId !== "ALL" && (
-            <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 text-[#0070E0] rounded-2xl text-xs font-semibold">
+            <div className="flex items-center gap-2 p-3 bg-[#EDF7F6] border border-[#9DF9EF] text-[#0EA5B7] rounded-2xl text-xs font-semibold">
               <span>Filtering applications for Project ID: <strong>{filterByProjectId}</strong></span>
               <button
                 onClick={() => setFilterByProjectId("ALL")}
@@ -2511,8 +2531,8 @@ function ClientDashboardContent() {
                 <div key={projId} className="space-y-3 p-4 rounded-3xl bg-gray-50/70 border border-gray-200/80">
                   <div className="flex flex-wrap items-center justify-between gap-2 px-1">
                     <div className="flex items-center gap-2">
-                      <FolderKanban className="w-4 h-4 text-[#0070E0]" />
-                      <h3 className="text-sm font-extrabold text-[#003087]">
+                      <FolderKanban className="w-4 h-4 text-[#0EA5B7]" />
+                      <h3 className="text-sm font-extrabold text-[#1E1820]">
                         {proj?.title || `Project #${projId}`}
                       </h3>
                       {proj?.domain && (
@@ -2557,7 +2577,7 @@ function ClientDashboardContent() {
 
                     <div className="text-left sm:text-right">
                       <span className="text-xs text-gray-500 block">Proposed Bid</span>
-                      <span className="text-base font-bold text-[#003087]">
+                      <span className="text-base font-bold text-[#1E1820]">
                         {formatCurrency(app.bidAmount, app.currency)}
                       </span>
                     </div>
@@ -2571,17 +2591,17 @@ function ClientDashboardContent() {
 
                   {/* AI Recommendation Banner */}
                   {app.aiRecommendation && (
-                    <div className="p-3 rounded-xl bg-purple-50/80 border border-purple-200 text-xs space-y-1">
+                    <div className="p-3 rounded-xl bg-[#FFA8B6]/20/80 border border-[#FFA8B6]/60 text-xs space-y-1">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 font-bold text-purple-900">
-                          <Sparkles className="w-4 h-4 text-purple-600" />
+                        <div className="flex items-center gap-1.5 font-bold text-[#1E1820]">
+                          <Sparkles className="w-4 h-4 text-[#A28089]" />
                           <span>Gemini Candidate Evaluation: {app.aiRecommendation.fitScore}% Fit</span>
                         </div>
                         <Badge variant="inReview" size="sm">
                           {app.aiRecommendation.domainMatchRate}% Domain Relevance
                         </Badge>
                       </div>
-                      <p className="text-purple-800 text-[11px] leading-relaxed">
+                      <p className="text-[#1E1820] text-[11px] leading-relaxed">
                         {app.aiRecommendation.summaryExplanation}
                       </p>
                     </div>
@@ -2599,7 +2619,7 @@ function ClientDashboardContent() {
                     </div>
                     <div>
                       <span className="text-gray-400 block">Compliance:</span>
-                      <span className="font-bold text-[#0070E0]">{app.trustScorecard.complianceScore}%</span>
+                      <span className="font-bold text-[#0EA5B7]">{app.trustScorecard.complianceScore}%</span>
                     </div>
                   </div>
 
@@ -2609,10 +2629,10 @@ function ClientDashboardContent() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="text-xs text-[#0070E0] border-blue-200 hover:bg-blue-50"
+                      className="text-xs text-[#0EA5B7] border-[#9DF9EF] hover:bg-[#EDF7F6]"
                       onClick={() => setSelectedApplicantForReview(app)}
                     >
-                      <Eye className="w-3.5 h-3.5 mr-1 text-[#0070E0]" />
+                      <Eye className="w-3.5 h-3.5 mr-1 text-[#0EA5B7]" />
                       Inspect Candidate Profile &amp; CV
                     </Button>
                     <div className="flex items-center gap-2">
@@ -2672,7 +2692,7 @@ function ClientDashboardContent() {
         <div className="space-y-6 animate-fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <h2 className="text-2xl font-extrabold text-[#003087] tracking-tight">Active Escrow &amp; Milestone Hub</h2>
+              <h2 className="text-2xl font-extrabold text-[#1E1820] tracking-tight">Active Escrow &amp; Milestone Hub</h2>
               <p className="text-xs text-gray-500">
                 Approve milestone deliverables or request revisions before releasing escrow funds.
               </p>
@@ -2697,7 +2717,7 @@ function ClientDashboardContent() {
             <div className="lg:col-span-4 space-y-3">
               <Card className="border-gray-100 bg-white p-3.5 rounded-2xl space-y-3 shadow-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-extrabold text-[#003087] uppercase tracking-wider">
+                  <span className="text-xs font-extrabold text-[#1E1820] uppercase tracking-wider">
                     Your Contracts ({filteredContracts.length}/{myContracts.length})
                   </span>
                 </div>
@@ -2706,7 +2726,7 @@ function ClientDashboardContent() {
                   value={contractSearch}
                   onChange={(e) => setContractSearch(e.target.value)}
                   placeholder="Search project, talent, or ID..."
-                  className="w-full h-9 px-3 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                  className="w-full h-9 px-3 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#51E2F5]"
                 />
                 <div className="flex flex-wrap gap-1.5">
                   {[
@@ -2721,7 +2741,7 @@ function ClientDashboardContent() {
                       onClick={() => setContractFilter(f.id as any)}
                       className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-colors cursor-pointer ${
                         contractFilter === f.id
-                          ? "bg-[#003087] text-white"
+                          ? "bg-[#1E1820] text-white"
                           : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                       }`}
                     >
@@ -2744,13 +2764,13 @@ function ClientDashboardContent() {
                       onClick={() => setSelectedContractId(c.id)}
                       className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer ${
                         isSelected
-                          ? "border-[#0070E0] bg-blue-50/40 ring-2 ring-[#0070E0]/20 shadow-sm"
-                          : "border-gray-200 bg-white hover:border-blue-200"
+                          ? "border-[#51E2F5] bg-[#EDF7F6] ring-2 ring-[#51E2F5]/20 shadow-sm"
+                          : "border-gray-200 bg-white hover:border-[#9DF9EF]"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2 mb-1.5">
                         <h4 className="font-bold text-xs text-gray-900 line-clamp-1">{c.projectTitle}</h4>
-                        <span className="font-extrabold text-xs text-[#003087] shrink-0">
+                        <span className="font-extrabold text-xs text-[#1E1820] shrink-0">
                           {formatCurrency(c.totalBudget, c.currency)}
                         </span>
                       </div>
@@ -2764,7 +2784,7 @@ function ClientDashboardContent() {
                         )}
                       </div>
                       <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-[#0070E0] rounded-full" style={{ width: `${pct}%` }} />
+                        <div className="h-full bg-[#51E2F5] rounded-full" style={{ width: `${pct}%` }} />
                       </div>
                     </button>
                   );
@@ -2780,7 +2800,7 @@ function ClientDashboardContent() {
             {/* Right Panel: Selected Contract Full Escrow Workspace */}
             <div className="lg:col-span-8">
           <Card className="border-gray-100 bg-white shadow-lg rounded-3xl overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-b border-gray-100">
+            <CardHeader className="bg-gradient-to-r from-[#9DF9EF]/30 to-[#FFA8B6]/20 border-b border-gray-100 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="text-xl">{selectedContractForTab.projectTitle}</CardTitle>
@@ -2789,13 +2809,14 @@ function ClientDashboardContent() {
                     <code className="text-xs font-mono">{selectedContractForTab.id}</code>
                   </CardDescription>
                 </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                  <div className="text-left sm:text-right">
-                    <span className="text-xs text-gray-500">Escrow Value</span>
-                    <p className="text-2xl font-extrabold text-[#003087]">
-                      {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
-                    </p>
-                  </div>
+                <div className="text-left sm:text-right shrink-0">
+                  <span className="text-xs text-gray-500">Escrow Value</span>
+                  <p className="text-2xl font-extrabold text-[#1E1820]">
+                    {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
                   {(selectedContractForTab.escrowStatus === "HELD_IN_ESCROW" ||
                     selectedContractForTab.escrowStatus === "PARTIALLY_RELEASED") &&
                     selectedContractForTab.heldInEscrowAmount > 0 && (
@@ -2803,9 +2824,9 @@ function ClientDashboardContent() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleReleaseAllUpfront(selectedContractForTab.id)}
-                        className="border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold"
+                        className="border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold whitespace-nowrap shrink-0"
                       >
-                        <DollarSign className="w-3.5 h-3.5 mr-1" />
+                        <DollarSign className="w-3.5 h-3.5 mr-1 shrink-0" />
                         Override &amp; Pay Full Upfront
                       </Button>
                     )}
@@ -2821,27 +2842,25 @@ function ClientDashboardContent() {
                           setEarlyError("");
                           setEarlySettleModalOpen(true);
                         }}
-                        className="border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold"
+                        className="border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold whitespace-nowrap shrink-0"
                       >
                         End Early / Settle
                       </Button>
                     )}
                   <Link
                     href={`/messages?contractId=${selectedContractForTab.id}`}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-50 hover:bg-blue-100 text-[#0070E0] border border-blue-200 transition-colors shadow-2xs"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold bg-[#EDF7F6] hover:bg-[#9DF9EF]/50 text-[#0EA5B7] border border-[#9DF9EF] transition-colors shadow-2xs whitespace-nowrap shrink-0"
                   >
-                    <MessageSquare className="w-3.5 h-3.5 text-[#0070E0]" />
+                    <MessageSquare className="w-3.5 h-3.5 text-[#0EA5B7] shrink-0" />
                     <span>Messages</span>
                   </Link>
                   <Link
                     href={`/disputes?contractId=${selectedContractForTab.id}`}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-2xs"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-2xs whitespace-nowrap shrink-0"
                   >
-                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     <span>Dispute Resolution</span>
                   </Link>
-                </div>
-              {/* Financial Balances */}
               </div>
             </CardHeader>
             <CardContent className="space-y-6 pt-6">
@@ -2874,11 +2893,11 @@ function ClientDashboardContent() {
 
               {/* PayPal Escrow Funding Callout when AWAITING_AUTHORIZATION */}
               {selectedContractForTab.escrowStatus === "AWAITING_AUTHORIZATION" && (
-                <div className="p-5 rounded-2xl bg-gradient-to-r from-[#003087]/5 via-[#0070E0]/10 to-indigo-50 border border-[#0070E0]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-[#003087]/5 via-[#0070E0]/10 to-indigo-50 border border-[#51E2F5]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-5 h-5 text-[#0070E0]" />
-                      <h4 className="text-sm font-extrabold text-[#003087]">
+                      <ShieldCheck className="w-5 h-5 text-[#0EA5B7]" />
+                      <h4 className="text-sm font-extrabold text-[#1E1820]">
                         Fund Escrow via PayPal Sandbox (Orders v2 Authorize)
                       </h4>
                     </div>
@@ -2891,7 +2910,7 @@ function ClientDashboardContent() {
                     size="md"
                     disabled={isFundingEscrow}
                     onClick={() => handleFundEscrowWithPayPal(selectedContractForTab.id)}
-                    className="shrink-0 bg-[#0070E0] hover:bg-[#003087] text-white font-bold shadow-md"
+                    className="shrink-0 bg-[#51E2F5] hover:bg-[#3ad3e8] text-[#1E1820] font-bold shadow-md"
                   >
                     <Lock className="w-4 h-4 mr-1.5" />
                     {isFundingEscrow ? "Connecting to PayPal..." : "Fund Escrow with PayPal"}
@@ -2923,7 +2942,7 @@ function ClientDashboardContent() {
                 </div>
                 <div>
                   <span className="text-xs text-gray-500 block">Settlement Progress</span>
-                  <span className="text-lg font-bold text-[#0070E0]">
+                  <span className="text-lg font-bold text-[#0EA5B7]">
                     {selectedContractForTab.totalBudget > 0
                       ? Math.round((selectedContractForTab.releasedAmount / selectedContractForTab.totalBudget) * 100)
                       : 0}
@@ -2934,9 +2953,9 @@ function ClientDashboardContent() {
 
               {/* Assigned Talent & Project Brief Overview */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl bg-blue-50/40 border border-blue-100 space-y-2">
+                <div className="p-4 rounded-2xl bg-[#EDF7F6] border border-[#9DF9EF] space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#003087]">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#1E1820]">
                       Assigned Talent Working on Project
                     </span>
                     {selectedContractForTab.freelancerRating ? (
@@ -2944,7 +2963,7 @@ function ClientDashboardContent() {
                     ) : null}
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#0070E0] text-white flex items-center justify-center font-bold text-sm shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-[#51E2F5] text-[#1E1820] flex items-center justify-center font-bold text-sm shrink-0">
                       {selectedContractForTab.freelancerName?.charAt(0).toUpperCase() || "T"}
                     </div>
                     <div className="min-w-0 text-xs">
@@ -2954,7 +2973,7 @@ function ClientDashboardContent() {
                         {selectedContractForTab.freelancerEmail ? ` • ${selectedContractForTab.freelancerEmail}` : ""}
                       </p>
                       {(selectedContractForTab.freelancerPayoutEmail || selectedContractForTab.freelancerEmail) && (
-                        <p className="text-[11px] text-[#003087] font-medium truncate mt-0.5">
+                        <p className="text-[11px] text-[#1E1820] font-medium truncate mt-0.5">
                           PayPal Payout Email:{" "}
                           <span className="font-mono">
                             {selectedContractForTab.freelancerPayoutEmail || selectedContractForTab.freelancerEmail}
@@ -2977,7 +2996,7 @@ function ClientDashboardContent() {
                     <span className="text-[11px] font-bold uppercase tracking-wider text-gray-600">
                       Project Brief &amp; Deadline
                     </span>
-                    <span className="text-[11px] font-semibold text-[#003087]">
+                    <span className="text-[11px] font-semibold text-[#1E1820]">
                       Due: {selectedContractForTab.projectDeadline ? formatDate(selectedContractForTab.projectDeadline) : "Flexible"}
                     </span>
                   </div>
@@ -2987,14 +3006,14 @@ function ClientDashboardContent() {
                   <div className="pt-1">
                     <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
                       <span>Milestone Progress</span>
-                      <span className="font-bold text-[#003087]">
+                      <span className="font-bold text-[#1E1820]">
                         {selectedContractForTab.milestones.filter((m) => m.status === "RELEASED").length} /{" "}
                         {selectedContractForTab.milestones.length} Completed
                       </span>
                     </div>
                     <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-[#0070E0] rounded-full transition-all"
+                        className="h-full bg-[#51E2F5] rounded-full transition-all"
                         style={{
                           width: `${
                             selectedContractForTab.milestones.length > 0
@@ -3026,9 +3045,9 @@ function ClientDashboardContent() {
                         key={ms.id}
                         className={`p-5 rounded-2xl border transition-all ${
                           ms.status === "IN_REVIEW"
-                            ? "border-purple-300 bg-purple-50/20 ring-1 ring-purple-300"
+                            ? "border-purple-300 bg-[#FFA8B6]/20/20 ring-1 ring-purple-300"
                             : ms.status === "ACTIVE"
-                            ? "border-blue-200 bg-blue-50/10"
+                            ? "border-[#9DF9EF] bg-[#EDF7F6]/10"
                             : ms.status === "RELEASED"
                             ? "border-emerald-200 bg-emerald-50/20"
                             : "border-gray-200 bg-white"
@@ -3050,8 +3069,8 @@ function ClientDashboardContent() {
                         {ms.subtasks && ms.subtasks.length > 0 && (
                           <div className="mb-3.5 p-3.5 bg-gray-50 rounded-2xl border border-gray-100 space-y-2.5">
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-bold text-[#003087] flex items-center gap-1.5">
-                                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                              <span className="font-bold text-[#1E1820] flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-[#A28089]" />
                                 Internal Subtask Division ({ms.subtasks.filter(s => s.status === 'COMPLETED').length}/{ms.subtasks.length} Completed)
                               </span>
                               <span className="text-gray-500 font-semibold">
@@ -3066,13 +3085,13 @@ function ClientDashboardContent() {
                                     st.status === 'COMPLETED'
                                       ? 'bg-emerald-50/50 border-emerald-200'
                                       : st.status === 'IN_PROGRESS'
-                                      ? 'bg-blue-50/50 border-blue-200'
+                                      ? 'bg-[#EDF7F6] border-[#9DF9EF]'
                                       : 'bg-white border-gray-200'
                                   }`}
                                 >
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5">
-                                      <span className="font-extrabold text-[#003087] text-[10px]">{st.stepNumber}</span>
+                                      <span className="font-extrabold text-[#1E1820] text-[10px]">{st.stepNumber}</span>
                                       <span className="font-semibold text-gray-800 truncate">{st.title}</span>
                                     </div>
                                     <span className="text-[10px] text-gray-500 block mt-0.5">
@@ -3128,7 +3147,7 @@ function ClientDashboardContent() {
                               href={ms.submission.submissionUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-[#0070E0] font-mono text-[11px] break-all inline-flex items-center gap-1 hover:underline"
+                              className="text-[#0EA5B7] font-mono text-[11px] break-all inline-flex items-center gap-1 hover:underline"
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
                               {ms.submission.submissionUrl}
@@ -3141,16 +3160,16 @@ function ClientDashboardContent() {
 
                             {/* Advisory AI Report */}
                             {ms.submission.aiVerificationReport && (
-                              <div className="mt-2 p-3 bg-purple-50 rounded-xl border border-purple-200 text-xs space-y-1">
-                                <div className="flex items-center justify-between font-bold text-purple-900">
+                              <div className="mt-2 p-3 bg-[#FFA8B6]/20 rounded-xl border border-[#FFA8B6]/60 text-xs space-y-1">
+                                <div className="flex items-center justify-between font-bold text-[#1E1820]">
                                   <span className="flex items-center gap-1.5">
-                                    <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                                    <Sparkles className="w-3.5 h-3.5 text-[#A28089]" />
                                     Advisory Score: {ms.submission.aiVerificationReport.overallScore}% (Grade{" "}
                                     {ms.submission.aiVerificationReport.qualityGrade})
                                   </span>
-                                  <span className="text-[10px] text-purple-600 font-normal">Advisory Only</span>
+                                  <span className="text-[10px] text-[#A28089] font-normal">Advisory Only</span>
                                 </div>
-                                <ul className="text-[11px] text-purple-800 space-y-1 pt-1">
+                                <ul className="text-[11px] text-[#1E1820] space-y-1 pt-1">
                                   {ms.submission.aiVerificationReport.checklist.map((item, idx) => (
                                     <li key={idx} className="flex items-start gap-1.5">
                                       {item.passed ? (
@@ -3158,7 +3177,7 @@ function ClientDashboardContent() {
                                       ) : (
                                         <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                                       )}
-                                      <span className={item.passed ? "text-purple-900" : "text-amber-800"}>
+                                      <span className={item.passed ? "text-[#1E1820]" : "text-amber-800"}>
                                         {item.criterion}: {item.evidenceNotes}
                                       </span>
                                     </li>
@@ -3182,7 +3201,7 @@ function ClientDashboardContent() {
                           {/* Client Approval & Override Controls */}
                           <div className="flex flex-wrap items-center gap-2">
                             {ms.status === "ACTIVE" && !ms.submission && (
-                              <span className="text-[11px] text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full font-medium">
+                              <span className="text-[11px] text-blue-700 bg-[#EDF7F6] px-2.5 py-1 rounded-full font-medium">
                                 Awaiting talent submission
                               </span>
                             )}
@@ -3233,8 +3252,8 @@ function ClientDashboardContent() {
               {paypalTxs.length > 0 && (
                 <div className="pt-4 border-t border-gray-100 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-bold text-[#003087] uppercase tracking-wider flex items-center gap-1.5">
-                      <ShieldCheck className="w-4 h-4 text-[#0070E0]" />
+                    <h3 className="text-xs font-bold text-[#1E1820] uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-[#0EA5B7]" />
                       PayPal Escrow Audit Ledger ({paypalTxs.length})
                     </h3>
                     <Badge variant="paypal" size="sm">PayPal {paypalTxs[0]?.mode?.toUpperCase() || "SANDBOX"}</Badge>
@@ -3260,7 +3279,7 @@ function ClientDashboardContent() {
                             {tx.paypalRefundId && <span>Refund: {tx.paypalRefundId}</span>}
                           </div>
                         </div>
-                        <span className="font-bold text-[#003087] shrink-0">
+                        <span className="font-bold text-[#1E1820] shrink-0">
                           {formatCurrency(tx.amount, tx.currency)}
                         </span>
                       </div>
@@ -3383,7 +3402,7 @@ function ClientDashboardContent() {
         <div className="space-y-6 animate-fade-in">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-extrabold text-[#003087] tracking-tight">Client Organization Profile</h2>
+              <h2 className="text-2xl font-extrabold text-[#1E1820] tracking-tight">Client Organization Profile</h2>
               <p className="text-xs text-gray-500">Manage hiring organization details and escrow preferences.</p>
             </div>
             {!isEditingProfile && (
@@ -3395,9 +3414,9 @@ function ClientDashboardContent() {
           </div>
 
           <Card className="border-gray-100 bg-white shadow-md rounded-3xl overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-b border-gray-100">
+            <CardHeader className="bg-gradient-to-r from-[#9DF9EF]/30 to-[#FFA8B6]/20 border-b border-gray-100">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-[#003087] text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                <div className="w-12 h-12 rounded-2xl bg-[#1E1820] text-white flex items-center justify-center font-bold text-lg shadow-xs">
                   {currentUser.companyName
                     ? currentUser.companyName.charAt(0).toUpperCase()
                     : currentUser.name
@@ -3441,8 +3460,8 @@ function ClientDashboardContent() {
                   {city || stateName || country || address ? (
                     <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-[#003087]">
-                          <MapPin className="w-4 h-4 text-[#0070E0]" />
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-[#1E1820]">
+                          <MapPin className="w-4 h-4 text-[#0EA5B7]" />
                           <span>Business Location</span>
                         </div>
                       </div>
@@ -3522,7 +3541,7 @@ function ClientDashboardContent() {
                   {/* Location & Address Inputs */}
                   <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-3">
                     <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-[#0070E0]" />
+                      <MapPin className="w-4 h-4 text-[#0EA5B7]" />
                       <span className="text-xs font-bold text-gray-900">Organization Location &amp; Address</span>
                     </div>
 
@@ -3591,12 +3610,12 @@ function ClientDashboardContent() {
             {/* Top Dossier Header */}
             <div className="px-6 py-4 bg-white border-b border-gray-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-[#003087] text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                <div className="w-11 h-11 rounded-2xl bg-[#1E1820] text-white flex items-center justify-center font-bold text-lg shadow-xs">
                   {selectedApplicantForReview.freelancerName.charAt(0).toUpperCase()}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-extrabold text-[#003087]">
+                    <h3 className="text-lg font-extrabold text-[#1E1820]">
                       {selectedApplicantForReview.freelancerName}
                     </h3>
                     <Badge variant="paypal" size="sm">
@@ -3613,7 +3632,7 @@ function ClientDashboardContent() {
                 <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
                   Applied: {formatDate(selectedApplicantForReview.createdAt)}
                 </span>
-                <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-[#003087] border border-blue-200">
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-[#EDF7F6] text-[#1E1820] border border-[#9DF9EF]">
                   Bid: {formatCurrency(selectedApplicantForReview.bidAmount, selectedApplicantForReview.currency)}
                 </span>
                 <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -3708,7 +3727,7 @@ function ClientDashboardContent() {
                 {/* Left Card: Candidate Summary, Cover Letter, Skills & Education */}
                 <div className="p-5 rounded-2xl bg-white border border-gray-200 space-y-4 text-xs shadow-2xs">
                   <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
-                    <h4 className="font-extrabold text-sm text-[#003087]">Candidate Summary &amp; Proposal</h4>
+                    <h4 className="font-extrabold text-sm text-[#1E1820]">Candidate Summary &amp; Proposal</h4>
                     <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600">
                       {selectedApplicantForReview.coverLetter.trim().split(/\s+/).filter(Boolean).length} Words
                     </span>
@@ -3725,7 +3744,7 @@ function ClientDashboardContent() {
                         {selectedApplicantForReview.freelancerProfile.skills.map((skill, idx) => (
                           <span
                             key={idx}
-                            className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-[#003087] border border-blue-200"
+                            className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#EDF7F6] text-[#1E1820] border border-[#9DF9EF]"
                           >
                             {skill}
                           </span>
@@ -3762,10 +3781,10 @@ function ClientDashboardContent() {
                 </div>
 
                 {/* Right Card: AI-Assisted Candidate Analysis */}
-                <div className="p-5 rounded-2xl bg-white border border-purple-200 space-y-4 text-xs shadow-2xs">
-                  <div className="flex items-center justify-between border-b border-purple-100 pb-2.5">
-                    <div className="flex items-center gap-1.5 font-extrabold text-sm text-purple-900">
-                      <Sparkles className="w-4 h-4 text-purple-600" />
+                <div className="p-5 rounded-2xl bg-white border border-[#FFA8B6]/60 space-y-4 text-xs shadow-2xs">
+                  <div className="flex items-center justify-between border-b border-[#FFA8B6]/40 pb-2.5">
+                    <div className="flex items-center gap-1.5 font-extrabold text-sm text-[#1E1820]">
+                      <Sparkles className="w-4 h-4 text-[#A28089]" />
                       <span>AI-Assisted Candidate Analysis</span>
                     </div>
                     {selectedApplicantForReview.aiRecommendation && (
@@ -3782,7 +3801,7 @@ function ClientDashboardContent() {
 
                   {selectedApplicantForReview.aiRecommendation ? (
                     <div className="space-y-3">
-                      <p className="text-gray-700 leading-relaxed bg-purple-50/50 p-3.5 rounded-xl border border-purple-100">
+                      <p className="text-gray-700 leading-relaxed bg-[#FFA8B6]/15 p-3.5 rounded-xl border border-[#FFA8B6]/40">
                         {selectedApplicantForReview.aiRecommendation.summaryExplanation}
                       </p>
 
@@ -3857,7 +3876,7 @@ function ClientDashboardContent() {
           <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden space-y-4 p-6 animate-slide-up max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3 shrink-0">
               <div className="flex items-center gap-2">
-                <FileCheck className="w-5 h-5 text-[#0070E0]" />
+                <FileCheck className="w-5 h-5 text-[#0EA5B7]" />
                 <h3 className="font-bold text-base text-gray-900">
                   CV Document: {selectedApplicantForReview.freelancerProfile?.cvFile?.name || "No CV Uploaded"}
                 </h3>
@@ -3919,7 +3938,7 @@ function ClientDashboardContent() {
 
                 {selectedApplicantForReview.freelancerProfile?.cvFile?.extractedInfo?.summary && (
                   <div>
-                    <span className="font-bold text-[#003087] block mb-1">CANDIDATE SUMMARY</span>
+                    <span className="font-bold text-[#1E1820] block mb-1">CANDIDATE SUMMARY</span>
                     <p className="text-gray-700">
                       {selectedApplicantForReview.freelancerProfile.cvFile.extractedInfo.summary}
                     </p>
@@ -3928,7 +3947,7 @@ function ClientDashboardContent() {
 
                 {selectedApplicantForReview.freelancerProfile?.skills?.length ? (
                   <div>
-                    <span className="font-bold text-[#003087] block mb-1">SKILLS</span>
+                    <span className="font-bold text-[#1E1820] block mb-1">SKILLS</span>
                     <p className="text-gray-700">
                       {selectedApplicantForReview.freelancerProfile.skills.join(", ")}
                     </p>
@@ -3937,7 +3956,7 @@ function ClientDashboardContent() {
 
                 {selectedApplicantForReview.freelancerProfile?.experience?.length ? (
                   <div>
-                    <span className="font-bold text-[#003087] block mb-1">EXPERIENCE</span>
+                    <span className="font-bold text-[#1E1820] block mb-1">EXPERIENCE</span>
                     <ul className="text-gray-700 list-disc list-inside space-y-1">
                       {selectedApplicantForReview.freelancerProfile.experience.map((exp, idx) => (
                         <li key={idx}>{exp}</li>
@@ -3948,7 +3967,7 @@ function ClientDashboardContent() {
 
                 {selectedApplicantForReview.freelancerProfile?.education?.length ? (
                   <div>
-                    <span className="font-bold text-[#003087] block mb-1">EDUCATION</span>
+                    <span className="font-bold text-[#1E1820] block mb-1">EDUCATION</span>
                     <ul className="text-gray-700 list-disc list-inside space-y-1">
                       {selectedApplicantForReview.freelancerProfile.education.map((edu, idx) => (
                         <li key={idx}>{edu}</li>
@@ -3964,7 +3983,7 @@ function ClientDashboardContent() {
                 <a
                   href={selectedApplicantForReview.freelancerProfile.cvFile.url}
                   download={selectedApplicantForReview.freelancerProfile.cvFile.name}
-                  className="inline-flex items-center px-4 py-2 rounded-xl text-xs font-bold bg-[#0070E0] text-white hover:bg-[#005bb5]"
+                  className="inline-flex items-center px-4 py-2 rounded-xl text-xs font-bold bg-[#51E2F5] text-[#1E1820] hover:bg-[#005bb5]"
                 >
                   Download CV
                 </a>
@@ -4033,11 +4052,11 @@ function ClientDashboardContent() {
           <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden p-6 space-y-5 animate-slide-up">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-blue-50 text-[#0070E0] flex items-center justify-center shrink-0">
+                <div className="w-11 h-11 rounded-2xl bg-[#EDF7F6] text-[#0EA5B7] flex items-center justify-center shrink-0">
                   <ShieldCheck className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-base text-[#003087]">Lock Escrow via PayPal</h3>
+                  <h3 className="font-extrabold text-base text-[#1E1820]">Lock Escrow via PayPal</h3>
                   <p className="text-xs text-gray-500">Contract #{pendingEscrowCheckout.contractId} Created</p>
                 </div>
               </div>
@@ -4049,7 +4068,7 @@ function ClientDashboardContent() {
               </button>
             </div>
 
-            <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 space-y-2 text-xs">
+            <div className="p-4 rounded-2xl bg-[#EDF7F6] border border-[#9DF9EF] space-y-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-500">Project:</span>
                 <strong className="text-gray-900 text-right">{pendingEscrowCheckout.projectTitle}</strong>
@@ -4058,9 +4077,9 @@ function ClientDashboardContent() {
                 <span className="text-gray-500">Assigned Talent:</span>
                 <strong className="text-gray-900">{pendingEscrowCheckout.talentName}</strong>
               </div>
-              <div className="flex justify-between pt-2 border-t border-blue-100">
+              <div className="flex justify-between pt-2 border-t border-[#9DF9EF]">
                 <span className="text-gray-600 font-semibold">Escrow Amount to Hold:</span>
-                <strong className="text-base font-extrabold text-[#003087]">
+                <strong className="text-base font-extrabold text-[#1E1820]">
                   {formatCurrency(pendingEscrowCheckout.amount, pendingEscrowCheckout.currency)}
                 </strong>
               </div>
@@ -4077,8 +4096,8 @@ function ClientDashboardContent() {
             {/* Step 1: Owner Password & Payer Verification Gate */}
             {!escrowSecurityVerified ? (
               <form onSubmit={handleVerifyEscrowPassword} className="space-y-3 p-4 rounded-2xl bg-gray-50 border border-gray-200">
-                <div className="flex items-center gap-2 text-xs font-bold text-[#003087]">
-                  <Lock className="w-4 h-4 text-[#0070E0]" />
+                <div className="flex items-center gap-2 text-xs font-bold text-[#1E1820]">
+                  <Lock className="w-4 h-4 text-[#0EA5B7]" />
                   <span>Security Check: Verify Owner Credentials Before PayPal Checkout</span>
                 </div>
                 {escrowSecurityError && (
@@ -4141,7 +4160,7 @@ function ClientDashboardContent() {
                       onClick={() => {
                         window.location.href = pendingEscrowCheckout.approvalUrl!;
                       }}
-                      className="w-full bg-[#0070E0] hover:bg-[#003087] text-white font-bold"
+                      className="w-full bg-[#51E2F5] hover:bg-[#3ad3e8] text-[#1E1820] font-bold"
                     >
                       Pay with PayPal Sandbox Checkout →
                     </Button>
@@ -4165,7 +4184,7 @@ function ClientDashboardContent() {
                       setIsFundingEscrow(false);
                     }
                   }}
-                  className="w-full bg-[#003087] hover:bg-[#001f5c] text-white font-bold"
+                  className="w-full bg-[#1E1820] hover:bg-[#312834] text-white font-bold"
                 >
                   <Lock className="w-4 h-4 mr-1.5" />
                   {isFundingEscrow

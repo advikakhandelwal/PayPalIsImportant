@@ -187,18 +187,23 @@ def update_dispute(
     row.status = payload.status
     row.data = dispute_data
 
-    # Notify counterparty on status transitions
+    # Notify counterparty on status transitions (including dispute resolution)
     if prev_status != payload.status:
         is_client = current_user.id == row.client_id
         counterparty_id = row.freelancer_id if is_client else row.client_id
         counterparty_role = "FREELANCER" if is_client else "CLIENT"
+        is_resolved = "RESOLVED" in payload.status.upper() or "SETTLED" in payload.status.upper()
         _create_notification_record(
             db=db,
             user_id=counterparty_id,
             user_role=counterparty_role,
-            event="DISPUTE_UPDATED",
-            title=f"Dispute Update (Contract #{row.contract_id})",
-            description=f"{current_user.name} updated dispute status to {payload.status.replace('_', ' ')}.",
+            event="DISPUTE_RESOLVED" if is_resolved else "DISPUTE_UPDATED",
+            title=f"Dispute Resolved (Contract #{row.contract_id})" if is_resolved else f"Dispute Update (Contract #{row.contract_id})",
+            description=(
+                f"{current_user.name} finalized the dispute resolution on Contract #{row.contract_id}."
+                if is_resolved
+                else f"{current_user.name} updated dispute status to {payload.status.replace('_', ' ')}."
+            ),
             link_href=f"/disputes?contractId={row.contract_id}",
             entity_id=f"dispute-{row.contract_id}-{payload.status}-{int(datetime.utcnow().timestamp())}",
         )

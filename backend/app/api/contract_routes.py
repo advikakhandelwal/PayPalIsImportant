@@ -1104,6 +1104,19 @@ def request_milestone_revision(
             latest_sub.review_status = "REVISION_REQUESTED"
             latest_sub.revision_request = rev_record
 
+        from app.models.notification import Notification
+        db.add(
+            Notification(
+                user_id=contract.talent_id,
+                user_role="FREELANCER",
+                event="REVISION_REQUESTED",
+                title=f"Revision Requested: {milestone.title}",
+                description=f"{current_user.name} requested changes on Step {milestone.step_number}: {payload.feedback.strip()[:140]}",
+                link_href="/freelancer/dashboard?tab=contracts",
+                entity_id=f"rev-{contract.id}-{milestone.id}-{new_rev_count}",
+            )
+        )
+
         db.commit()
         db.refresh(milestone)
     except SQLAlchemyError as db_exc:

@@ -100,10 +100,10 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-md space-y-6">
         {/* Header */}
         <div className="text-center space-y-3">
-          <div className="w-14 h-14 rounded-2xl bg-[#0070E0] flex items-center justify-center text-white mx-auto shadow-md">
+          <div className="w-14 h-14 rounded-2xl bg-[#1E1820] flex items-center justify-center text-[#51E2F5] mx-auto shadow-md">
             <KeyRound className="w-7 h-7 text-white" />
           </div>
-          <h1 className="text-3xl font-extrabold text-[#003087] tracking-tight">
+          <h1 className="text-3xl font-extrabold text-[#1E1820] tracking-tight">
             Reset Your Password
           </h1>
           <p className="text-sm text-gray-500">
@@ -151,7 +151,7 @@ export default function ForgotPasswordPage() {
               <CardContent className="space-y-4 pt-8">
                 {infoMessage && (
                   <div className="flex items-start gap-2 p-3 text-xs text-sky-900 bg-sky-50 border border-sky-200 rounded-xl">
-                    <ShieldCheck className="w-4 h-4 shrink-0 text-[#0070E0] mt-0.5" />
+                    <ShieldCheck className="w-4 h-4 shrink-0 text-[#0EA5B7] mt-0.5" />
                     <span>{infoMessage}</span>
                   </div>
                 )}
@@ -232,7 +232,7 @@ export default function ForgotPasswordPage() {
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <div className="space-y-1">
-                <h2 className="text-lg font-bold text-[#003087]">Password Updated</h2>
+                <h2 className="text-lg font-bold text-[#1E1820]">Password Updated</h2>
                 <p className="text-xs text-gray-600">{infoMessage}</p>
               </div>
               <Link href="/auth/login" className="block">
@@ -246,7 +246,7 @@ export default function ForgotPasswordPage() {
 
           <CardFooter className="justify-center border-t border-gray-100 py-4 text-xs text-gray-500 bg-gray-50/50">
             Remembered your password?{" "}
-            <Link href="/auth/login" className="text-[#0070E0] font-bold ml-1 hover:underline">
+            <Link href="/auth/login" className="text-[#0EA5B7] font-bold ml-1 hover:underline">
               Back to Log In
             </Link>
           </CardFooter>

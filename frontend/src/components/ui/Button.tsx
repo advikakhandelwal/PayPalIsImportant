@@ -21,27 +21,27 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      "inline-flex items-center justify-center font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none select-none rounded-full cursor-pointer";
+      "inline-flex items-center justify-center font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none select-none rounded-full cursor-pointer whitespace-nowrap shrink-0 leading-tight";
 
     const variantStyles = {
       primary:
-        "btn-shadow bg-[#0070E0] text-white hover:bg-[#005bb8] focus-visible:ring-[#0070E0] active:scale-[0.98]",
+        "btn-shadow bg-[#51E2F5] text-[#1E1820] hover:bg-[#3ad3e8] focus-visible:ring-[#51E2F5] active:scale-[0.98]",
       dark:
-        "bg-[#003087] text-white hover:bg-[#002060] focus-visible:ring-[#003087] shadow-sm active:scale-[0.98]",
+        "bg-[#1E1820] text-[#EDF7F6] hover:bg-[#312834] focus-visible:ring-[#1E1820] shadow-sm active:scale-[0.98]",
       secondary:
-        "bg-gray-100 text-gray-800 hover:bg-gray-200 focus-visible:ring-gray-300 active:scale-[0.98]",
+        "bg-[#9DF9EF]/55 text-[#1E1820] hover:bg-[#9DF9EF]/85 focus-visible:ring-[#9DF9EF] active:scale-[0.98]",
       outline:
-        "border border-gray-200 bg-white text-gray-700 hover:border-[#0070E0] hover:text-[#0070E0] focus-visible:ring-[#0070E0] shadow-2xs",
+        "border border-[#A28089]/35 bg-white text-[#1E1820] hover:border-[#51E2F5] hover:bg-[#EDF7F6] focus-visible:ring-[#51E2F5] shadow-2xs",
       ghost:
-        "text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-gray-200",
+        "text-[#5C4B51] hover:bg-[#EDF7F6] hover:text-[#1E1820] focus-visible:ring-[#A28089]/30",
       danger:
         "bg-rose-600 text-white hover:bg-rose-700 focus-visible:ring-rose-500 shadow-sm active:scale-[0.98]",
     };
 
     const sizeStyles = {
-      sm: "h-8 px-4 text-xs gap-1.5",
-      md: "h-10 px-5 text-sm gap-2",
-      lg: "h-12 px-7 text-base gap-2.5",
+      sm: "min-h-8 py-1.5 px-4 text-xs gap-1.5",
+      md: "min-h-10 py-2 px-5 text-sm gap-2",
+      lg: "min-h-12 py-2.5 px-7 text-base gap-2.5",
     };
 
     return (

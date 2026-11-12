@@ -28,7 +28,7 @@ export const RequireAuth: React.FC<RequireAuthProps> = ({ children, requiredRole
   if (!isHydrated) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-slate-500">
-        <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0070E0] flex items-center justify-center animate-pulse">
+        <div className="w-10 h-10 rounded-xl bg-[#EDF7F6] text-[#0EA5B7] flex items-center justify-center animate-pulse">
           <ShieldCheck className="w-5 h-5" />
         </div>
         <p className="text-xs font-semibold">Verifying your session...</p>
@@ -40,11 +40,11 @@ export const RequireAuth: React.FC<RequireAuthProps> = ({ children, requiredRole
     return (
       <div className="max-w-lg mx-auto px-4 py-16 text-center">
         <Card className="p-8 border-slate-200 bg-white shadow-sm rounded-3xl space-y-4">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-50 text-[#0070E0] flex items-center justify-center">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-[#EDF7F6] text-[#0EA5B7] flex items-center justify-center">
             <Lock className="w-7 h-7" />
           </div>
           <Badge variant="paypal" size="md">Authentication Required</Badge>
-          <h2 className="text-xl font-bold text-[#003087]">Sign in to access this workspace</h2>
+          <h2 className="text-xl font-bold text-[#1E1820]">Sign in to access this workspace</h2>
           <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
             Escrow vaults, milestone deliverables, contracts, and account metrics are private. Please sign in or create an account to continue.
           </p>

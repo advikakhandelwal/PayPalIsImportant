@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: trustpay-ai-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SEED_DEMO_DATA
+        value: "false"
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: PAYPAL_MODE
+        value: sandbox
+      - key: PAYPAL_ESCROW_INTENT
+        value: CAPTURE
+      - key: PAYPAL_SANDBOX_TALENT_EMAIL
+        value: sb-xgttu53857159@personal.example.com
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+  - type: web
+    name: trustpay-ai-frontend
+    runtime: node
+    rootDir: frontend
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start -- -p $PORT -H 0.0.0.0
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+
+  - type: workflow
+    name: trustpay-ai-workflows
+    runtime: python
+    rootDir: workflows
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ZAPIER_WEBHOOK_URL
+        sync: false

@@ -8,6 +8,8 @@ venv/
 
 # Databases
 *.db
+*.db-shm
+*.db-wal
 *.sqlite3
 
 # Node
@@ -15,4 +17,5 @@ node_modules/
 .next/
 dist/
 build/
+tsconfig.tsbuildinfo
 .DS_Store

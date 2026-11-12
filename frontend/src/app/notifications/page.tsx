@@ -48,7 +48,7 @@ function getEventIcon(event: NotificationEvent) {
     case "DELIVERABLE_SUBMITTED":
     case "DELIVERABLE_RESUBMITTED":
     case "REVISION_REQUESTED":
-      return <FileText className="w-5 h-5 text-[#0070E0]" />;
+      return <FileText className="w-5 h-5 text-[#0EA5B7]" />;
     case "NEW_APPLICATION":
       return <Users className="w-5 h-5 text-purple-500" />;
     default:
@@ -160,7 +160,7 @@ export default function NotificationsPage() {
         <div className="flex items-center justify-between">
           <Link
             href={dashboardHref}
-            className="inline-flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-[#0070E0] transition-colors"
+            className="inline-flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-[#0EA5B7] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Dashboard
@@ -174,12 +174,12 @@ export default function NotificationsPage() {
         <div className="bg-white border border-gray-100 rounded-3xl p-6 sm:p-8 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#0070E0] flex items-center justify-center shrink-0 shadow-xs">
+              <div className="w-12 h-12 rounded-2xl bg-[#EDF7F6] text-[#0EA5B7] flex items-center justify-center shrink-0 shadow-xs">
                 <Bell className="w-6 h-6" />
               </div>
               <div>
                 <div className="flex items-center gap-2.5">
-                  <h1 className="text-2xl font-extrabold text-[#003087] tracking-tight">
+                  <h1 className="text-2xl font-extrabold text-[#1E1820] tracking-tight">
                     Notification Centre
                   </h1>
                   {unreadCount > 0 && (
@@ -196,12 +196,15 @@ export default function NotificationsPage() {
 
             {/* Quick Actions */}
             <div className="flex items-center gap-2 shrink-0">
-              {unreadCount > 0 && (
-                <Button variant="outline" size="sm" onClick={markAllAsRead}>
-                  <CheckCheck className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
-                  Mark all as read
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={markAllAsRead}
+                disabled={unreadCount === 0}
+              >
+                <CheckCheck className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+                Mark all as read
+              </Button>
               <Button variant="ghost" size="sm" onClick={clearDismissed}>
                 <Trash2 className="w-3.5 h-3.5 mr-1.5 text-gray-400" />
                 Clear dismissed
@@ -228,7 +231,7 @@ export default function NotificationsPage() {
                   onClick={() => setActiveTab(tab.id as FilterTab)}
                   className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
                     activeTab === tab.id
-                      ? "bg-[#003087] text-white shadow-xs"
+                      ? "bg-[#1E1820] text-white shadow-xs"
                       : "bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                   }`}
                 >
@@ -276,7 +279,7 @@ export default function NotificationsPage() {
                   key={notif.id}
                   className={`bg-white border rounded-2xl p-4 sm:p-5 transition-all shadow-xs relative flex items-start gap-4 ${
                     !notif.isRead
-                      ? "border-blue-200 bg-blue-50/10 ring-1 ring-blue-100"
+                      ? "border-[#9DF9EF] bg-[#EDF7F6]/10 ring-1 ring-blue-100"
                       : "border-gray-100 hover:border-gray-200"
                   }`}
                 >
@@ -293,11 +296,11 @@ export default function NotificationsPage() {
                         {relativeTime} • {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                       {!notif.isRead && (
-                        <span className="w-2 h-2 rounded-full bg-[#0070E0]" title="Unread" />
+                        <span className="w-2 h-2 rounded-full bg-[#51E2F5]" title="Unread" />
                       )}
                     </div>
 
-                    <h4 className={`text-sm font-bold ${!notif.isRead ? "text-[#003087]" : "text-gray-800"}`}>
+                    <h4 className={`text-sm font-bold ${!notif.isRead ? "text-[#1E1820]" : "text-gray-800"}`}>
                       {notif.title}
                     </h4>
                     <p className="text-xs text-gray-600 mt-1 leading-relaxed">
@@ -310,7 +313,7 @@ export default function NotificationsPage() {
                         <Link
                           href={notif.linkHref}
                           onClick={() => markAsRead(notif.id)}
-                          className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0070E0] hover:text-[#003087] bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-all"
+                          className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0EA5B7] hover:text-[#1E1820] bg-[#EDF7F6] hover:bg-blue-100 px-3 py-1.5 rounded-full transition-all"
                         >
                           <span>View Details</span>
                           <ExternalLink className="w-3 h-3" />

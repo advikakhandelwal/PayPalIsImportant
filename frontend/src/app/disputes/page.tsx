@@ -242,7 +242,7 @@ function DisputesCenterContent() {
             <ShieldAlert className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold text-[#003087]">Disputes &amp; Resolution Center</h1>
+            <h1 className="text-2xl font-extrabold text-[#1E1820]">Disputes &amp; Resolution Center</h1>
             <p className="text-xs text-gray-500">
               Only contracts with active or resolved disputes appear here — keeping your workspace clean.
             </p>
@@ -298,7 +298,7 @@ function DisputesCenterContent() {
           <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
             <Link
               href={dashboardHref}
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0070E0] text-white text-xs font-bold hover:bg-[#005bb8]"
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#51E2F5] text-[#1E1820] text-xs font-bold hover:bg-[#005bb8]"
             >
               <span>Go to Dashboard</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -323,7 +323,7 @@ function DisputesCenterContent() {
           {/* Left: Only Disputed Contracts (or Contract Picker when raising new) */}
           <div className="lg:col-span-4 space-y-3">
             <Card className="p-3.5 rounded-2xl border border-gray-200 bg-white space-y-2.5">
-              <span className="text-xs font-extrabold text-[#003087] uppercase tracking-wider block">
+              <span className="text-xs font-extrabold text-[#1E1820] uppercase tracking-wider block">
                 {isRaisingNew
                   ? `Select Contract (${undisputedContracts.length})`
                   : `Disputed Contracts (${filteredDisputedContracts.length})`}
@@ -336,7 +336,7 @@ function DisputesCenterContent() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search dispute or party..."
-                    className="w-full h-9 pl-8 pr-3 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                    className="w-full h-9 pl-8 pr-3 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#51E2F5]"
                   />
                 </div>
               )}
@@ -354,13 +354,13 @@ function DisputesCenterContent() {
                     onClick={() => setSelectedContractId(c.id)}
                     className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer ${
                       isSelected
-                        ? "border-[#0070E0] bg-blue-50/50 ring-2 ring-[#0070E0]/20 shadow-xs"
-                        : "border-gray-200 bg-white hover:border-blue-200"
+                        ? "border-[#51E2F5] bg-[#EDF7F6] ring-2 ring-[#51E2F5]/20 shadow-xs"
+                        : "border-gray-200 bg-white hover:border-[#9DF9EF]"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <h4 className="font-bold text-xs text-gray-900 line-clamp-1">{c.projectTitle}</h4>
-                      <span className="text-xs font-extrabold text-[#003087] shrink-0">
+                      <span className="text-xs font-extrabold text-[#1E1820] shrink-0">
                         {formatCurrency(c.totalBudget, c.currency)}
                       </span>
                     </div>
@@ -399,7 +399,7 @@ function DisputesCenterContent() {
                     <p className="text-xs text-gray-500 mt-0.5">
                       Client: <strong>{selectedContract.clientName}</strong> • Talent:{" "}
                       <strong>{selectedContract.freelancerName}</strong> • Amount in Scope:{" "}
-                      <strong className="text-[#003087]">
+                      <strong className="text-[#1E1820]">
                         {formatCurrency(stakeAmount, selectedContract.currency)}
                       </strong>
                     </p>
@@ -407,7 +407,7 @@ function DisputesCenterContent() {
 
                   <Link
                     href={`/messages?contractId=${selectedContract.id}`}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50 hover:bg-blue-100 text-[#0070E0] border border-blue-200 shrink-0"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#EDF7F6] hover:bg-blue-100 text-[#0EA5B7] border border-[#9DF9EF] shrink-0"
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                     Message Other Party
@@ -432,7 +432,7 @@ function DisputesCenterContent() {
                       <select
                         value={category}
                         onChange={(e) => setCategory(e.target.value as DisputeCategory)}
-                        className="w-full h-11 px-4 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                        className="w-full h-11 px-4 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#51E2F5]"
                       >
                         {CATEGORY_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>
@@ -467,8 +467,8 @@ function DisputesCenterContent() {
                             onClick={() => setRequestedTalentPct(preset.pct)}
                             className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                               requestedTalentPct === preset.pct
-                                ? "border-[#0070E0] bg-blue-50 text-[#003087]"
-                                : "border-gray-200 bg-white text-gray-600 hover:border-blue-200"
+                                ? "border-[#51E2F5] bg-[#EDF7F6] text-[#1E1820]"
+                                : "border-gray-200 bg-white text-gray-600 hover:border-[#9DF9EF]"
                             }`}
                           >
                             {preset.label}
@@ -500,14 +500,14 @@ function DisputesCenterContent() {
                     </div>
 
                     {activeDispute.aiRecommendation && (
-                      <div className="p-5 rounded-2xl bg-blue-50/50 border border-blue-200 space-y-3">
-                        <div className="flex items-center gap-2 text-xs font-extrabold text-[#003087] uppercase tracking-wider">
-                          <Sparkles className="w-4 h-4 text-[#0070E0]" />
+                      <div className="p-5 rounded-2xl bg-[#EDF7F6] border border-[#9DF9EF] space-y-3">
+                        <div className="flex items-center gap-2 text-xs font-extrabold text-[#1E1820] uppercase tracking-wider">
+                          <Sparkles className="w-4 h-4 text-[#0EA5B7]" />
                           <span>Option 1: AI Fair Split (1-Click Mutual Approval)</span>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3 text-xs">
-                          <div className="bg-white p-3 rounded-xl border border-blue-100">
+                          <div className="bg-white p-3 rounded-xl border border-[#9DF9EF]">
                             <span className="text-gray-500 block">To Talent</span>
                             <strong className="text-base text-emerald-700">
                               {formatCurrency(
@@ -516,9 +516,9 @@ function DisputesCenterContent() {
                               )}
                             </strong>
                           </div>
-                          <div className="bg-white p-3 rounded-xl border border-blue-100">
+                          <div className="bg-white p-3 rounded-xl border border-[#9DF9EF]">
                             <span className="text-gray-500 block">Refund to Client</span>
-                            <strong className="text-base text-[#003087]">
+                            <strong className="text-base text-[#1E1820]">
                               {formatCurrency(
                                 activeDispute.aiRecommendation.clientAmount,
                                 selectedContract.currency
@@ -587,7 +587,7 @@ function DisputesCenterContent() {
                             </span>
                             <span>
                               Refund to Client:{" "}
-                              <strong className="text-[#003087]">
+                              <strong className="text-[#1E1820]">
                                 {formatCurrency(
                                   activeDispute.finalSettlement.clientAmount,
                                   selectedContract.currency
@@ -632,14 +632,14 @@ function DisputesCenterContent() {
                                 max={stakeAmount}
                                 value={proposedTalentAmt}
                                 onChange={(e) => setProposedTalentAmt(e.target.value)}
-                                className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                                className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#51E2F5]"
                               />
                             </div>
                             <div className="space-y-1">
                               <label className="font-bold text-gray-700 block">
                                 Client Refund (Auto-Calculated)
                               </label>
-                              <div className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-gray-50 text-sm font-bold text-[#003087] flex items-center">
+                              <div className="w-full h-10 px-3 rounded-xl border border-gray-200 bg-gray-50 text-sm font-bold text-[#1E1820] flex items-center">
                                 {formatCurrency(autoClientRefund, selectedContract.currency)}
                               </div>
                             </div>
@@ -679,7 +679,7 @@ function DisputesCenterContent() {
                       </div>
                       <div className="bg-white p-3.5 rounded-xl border border-emerald-100">
                         <span className="text-gray-500 block">Refunded to Client</span>
-                        <strong className="text-lg text-[#003087]">
+                        <strong className="text-lg text-[#1E1820]">
                           {formatCurrency(
                             activeDispute.resolution.clientAmount,
                             activeDispute.resolution.currency

@@ -138,11 +138,11 @@ export default function LedgerAndIntegrationsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-white border border-gray-100 shadow-xs">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#003087] text-white flex items-center justify-center shadow-xs">
+            <div className="w-12 h-12 rounded-2xl bg-[#1E1820] text-white flex items-center justify-center shadow-xs">
               <Table2 className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold text-[#003087]">
+              <h1 className="text-2xl font-extrabold text-[#1E1820]">
                 Escrow Audit Ledger &amp; Automations
               </h1>
               <p className="text-xs text-gray-500">
@@ -175,8 +175,8 @@ export default function LedgerAndIntegrationsPage() {
         <Card className="p-5 rounded-3xl border border-gray-200 bg-white space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-[#0070E0]" />
-              <h2 className="text-sm font-extrabold text-[#003087]">
+              <ShieldCheck className="w-4 h-4 text-[#0EA5B7]" />
+              <h2 className="text-sm font-extrabold text-[#1E1820]">
                 PayPal Escrow &amp; Payout Audit Grid ({rows.length} transactions)
               </h2>
             </div>
@@ -234,7 +234,7 @@ export default function LedgerAndIntegrationsPage() {
               value={zapierUrl}
               onChange={(e) => setZapierUrl(e.target.value)}
               placeholder="https://hooks.zapier.com/hooks/catch/..."
-              className="flex-1 h-10 px-3.5 rounded-xl border border-gray-200 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+              className="flex-1 h-10 px-3.5 rounded-xl border border-gray-200 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#51E2F5]"
             />
             <Button
               variant="outline"

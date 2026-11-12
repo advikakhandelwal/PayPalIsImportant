@@ -660,24 +660,27 @@ export const apiClient = {
   },
 
   async markNotificationRead(id: string): Promise<void> {
-    await fetch(`${API_BASE_URL}/notifications/${encodeURIComponent(id)}/read`, {
+    const res = await fetch(`${API_BASE_URL}/notifications/${encodeURIComponent(id)}/read`, {
       method: "PATCH",
       headers: getHeaders(),
     });
+    await handleResponse(res);
   },
 
   async markAllNotificationsRead(): Promise<void> {
-    await fetch(`${API_BASE_URL}/notifications/read-all`, {
+    const res = await fetch(`${API_BASE_URL}/notifications/read-all`, {
       method: "POST",
       headers: getHeaders(),
     });
+    await handleResponse(res);
   },
 
   async dismissNotification(id: string): Promise<void> {
-    await fetch(`${API_BASE_URL}/notifications/${encodeURIComponent(id)}/dismiss`, {
+    const res = await fetch(`${API_BASE_URL}/notifications/${encodeURIComponent(id)}/dismiss`, {
       method: "PATCH",
       headers: getHeaders(),
     });
+    await handleResponse(res);
   },
 
   async withdrawApplication(applicationId: string): Promise<{ withdrawn: boolean; applicationId: string }> {

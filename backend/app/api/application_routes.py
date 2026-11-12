@@ -26,6 +26,7 @@ from app.models.contract import Contract, EscrowStatus
 from app.models.milestone import Milestone, MilestoneStatus
 from app.models.project import Project, ProjectStatus
 from app.models.application import Application, ApplicationStatus
+from app.models.notification import Notification
 from app.schemas.marketplace_schemas import (
     ApplicationResponse,
     ApplicationCreateRequest,
@@ -949,6 +950,21 @@ def _execute_application_acceptance(
 
         # F. PayPal Integration Hook (Devansh's Scope)
         _trigger_paypal_escrow_order(new_contract, db=db)
+
+        # G. Persist real-time notification for the accepted freelancer
+        db.add(
+            Notification(
+                user_id=application.freelancer_id,
+                user_role="FREELANCER",
+                event="APPLICATION_ACCEPTED",
+                title=f"Application Accepted: {project.title}",
+                description=f"{current_user.name} accepted your proposal for {project.title}. Contract #{new_contract.id} is ready.",
+                link_href="/freelancer/dashboard",
+                entity_id=f"app-accepted-{new_contract.id}",
+                is_read=False,
+                is_dismissed=False,
+            )
+        )
 
         db.commit()
         db.refresh(new_contract)

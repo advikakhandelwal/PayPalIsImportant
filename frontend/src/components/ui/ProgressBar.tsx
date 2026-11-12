@@ -21,10 +21,10 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   const percentage = Math.min(Math.max(Math.round((value / max) * 100), 0), 100);
 
   const barVariants = {
-    paypal: "bg-paypal-blue",
+    paypal: "bg-gradient-to-r from-[#51E2F5] to-[#9DF9EF]",
     success: "bg-emerald-500",
     warning: "bg-amber-500",
-    inReview: "bg-purple-500",
+    inReview: "bg-[#FFA8B6]",
   };
 
   return (

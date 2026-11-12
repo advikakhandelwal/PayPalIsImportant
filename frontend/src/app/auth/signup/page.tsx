@@ -128,10 +128,10 @@ export default function SignupPage() {
       <div className="w-full max-w-md space-y-6">
         {/* Header */}
         <div className="text-center space-y-3">
-          <div className="w-14 h-14 rounded-2xl bg-[#0070E0] flex items-center justify-center text-white mx-auto shadow-md">
+          <div className="w-14 h-14 rounded-2xl bg-[#1E1820] flex items-center justify-center text-[#51E2F5] mx-auto shadow-md">
             <ShieldCheck className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-extrabold text-[#003087] tracking-tight">
+          <h1 className="text-3xl font-extrabold text-[#1E1820] tracking-tight">
             Create your TrustPay Account
           </h1>
           <p className="text-sm text-gray-500">
@@ -162,7 +162,7 @@ export default function SignupPage() {
                       onClick={() => setSelectedRole("FREELANCER")}
                       className={`p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
                         selectedRole === "FREELANCER"
-                          ? "border-[#0070E0] bg-blue-50/40 ring-2 ring-[#0070E0] shadow-xs"
+                          ? "border-[#51E2F5] bg-[#EDF7F6] ring-2 ring-[#51E2F5] shadow-xs"
                           : "border-gray-200 bg-white hover:border-gray-300"
                       }`}
                     >
@@ -170,14 +170,14 @@ export default function SignupPage() {
                         <div
                           className={`p-2 rounded-xl ${
                             selectedRole === "FREELANCER"
-                              ? "bg-[#0070E0] text-white"
+                              ? "bg-[#51E2F5] text-[#1E1820]"
                               : "bg-gray-100 text-gray-600"
                           }`}
                         >
                           <User className="w-4 h-4" />
                         </div>
                         {selectedRole === "FREELANCER" && (
-                          <CheckCircle2 className="w-4 h-4 text-[#0070E0]" />
+                          <CheckCircle2 className="w-4 h-4 text-[#0EA5B7]" />
                         )}
                       </div>
                       <div>
@@ -193,7 +193,7 @@ export default function SignupPage() {
                       onClick={() => setSelectedRole("CLIENT")}
                       className={`p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
                         selectedRole === "CLIENT"
-                          ? "border-[#003087] bg-slate-50 ring-2 ring-[#003087] shadow-xs"
+                          ? "border-[#1E1820] bg-slate-50 ring-2 ring-[#1E1820] shadow-xs"
                           : "border-gray-200 bg-white hover:border-gray-300"
                       }`}
                     >
@@ -201,14 +201,14 @@ export default function SignupPage() {
                         <div
                           className={`p-2 rounded-xl ${
                             selectedRole === "CLIENT"
-                              ? "bg-[#003087] text-white"
+                              ? "bg-[#1E1820] text-white"
                               : "bg-gray-100 text-gray-600"
                           }`}
                         >
                           <Building className="w-4 h-4" />
                         </div>
                         {selectedRole === "CLIENT" && (
-                          <CheckCircle2 className="w-4 h-4 text-[#003087]" />
+                          <CheckCircle2 className="w-4 h-4 text-[#1E1820]" />
                         )}
                       </div>
                       <div>
@@ -383,7 +383,7 @@ export default function SignupPage() {
 
           <CardFooter className="justify-center border-t border-gray-100 py-4 text-xs text-gray-500 bg-gray-50/50">
             Already have an account?{" "}
-            <Link href="/auth/login" className="text-[#0070E0] font-bold ml-1 hover:underline">
+            <Link href="/auth/login" className="text-[#0EA5B7] font-bold ml-1 hover:underline">
               Log In
             </Link>
           </CardFooter>

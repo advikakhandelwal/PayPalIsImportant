@@ -26,10 +26,10 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           rows={rows}
           required={required}
           className={cn(
-            "w-full px-4 py-3 rounded-xl border bg-white text-sm text-gray-900 placeholder:text-gray-400 transition-all shadow-2xs resize-y",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0070E0] focus-visible:border-transparent",
-            "disabled:opacity-50 disabled:bg-gray-50 disabled:cursor-not-allowed",
-            error ? "border-rose-400 focus-visible:ring-rose-400" : "border-gray-200 hover:border-gray-300",
+            "w-full px-4 py-3 rounded-xl border bg-white text-sm text-[#1E1820] placeholder:text-[#A28089] transition-all shadow-2xs resize-y",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#51E2F5] focus-visible:border-transparent",
+            "disabled:opacity-50 disabled:bg-[#EDF7F6] disabled:cursor-not-allowed",
+            error ? "border-rose-400 focus-visible:ring-rose-400" : "border-[#A28089]/30 hover:border-[#A28089]/60",
             className
           )}
           {...props}

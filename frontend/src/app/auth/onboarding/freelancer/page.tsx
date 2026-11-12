@@ -67,7 +67,7 @@ export default function FreelancerOnboardingPage() {
       <div className="w-full max-w-xl space-y-6">
         {/* Step Header */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-paypal-dark text-xs font-semibold">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EDF7F6] border border-[#9DF9EF] text-paypal-dark text-xs font-semibold">
             <User className="w-3.5 h-3.5" />
             <span>Step 2 of 2 • Freelancer Profile Setup</span>
           </div>
@@ -156,7 +156,7 @@ export default function FreelancerOnboardingPage() {
 
               {/* Notice regarding unrated initial status */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600 flex items-start gap-2">
-                <Sparkles className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                <Sparkles className="w-4 h-4 text-[#A28089] shrink-0 mt-0.5" />
                 <span>
                   <strong>Unrated Profile:</strong> As a new member, your trust scorecard begins in a clean unrated state. Your on-time delivery rate and compliance score will calculate automatically from verified milestone completions.
                 </span>

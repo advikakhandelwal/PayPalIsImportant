@@ -20,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="scroll-smooth">
-      <body className="min-h-screen flex flex-col bg-white text-gray-900 antialiased">
+      <body className="min-h-screen flex flex-col bg-[#EDF7F6] text-[#1E1820] antialiased selection:bg-[#51E2F5]/30 selection:text-[#1E1820]">
         <AuthProvider>
           <NotificationProvider>
             <DisputeProvider>

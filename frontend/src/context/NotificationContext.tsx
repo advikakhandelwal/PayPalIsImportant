@@ -101,19 +101,32 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     [currentUser.id, fetchNotifications]
   );
 
-  const markAsRead = useCallback((id: string) => {
-    setAllNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-    );
-    if (!id.startsWith("temp-")) {
-      apiClient.markNotificationRead(id).catch(() => {});
-    }
-  }, []);
+  const markAsRead = useCallback(
+    async (id: string) => {
+      setAllNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+      );
+      if (!id.startsWith("temp-")) {
+        try {
+          await apiClient.markNotificationRead(id);
+          await fetchNotifications();
+        } catch {
+          // non-blocking
+        }
+      }
+    },
+    [fetchNotifications]
+  );
 
-  const markAllAsRead = useCallback(() => {
+  const markAllAsRead = useCallback(async () => {
     setAllNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    apiClient.markAllNotificationsRead().catch(() => {});
-  }, []);
+    try {
+      await apiClient.markAllNotificationsRead();
+      await fetchNotifications();
+    } catch {
+      // non-blocking
+    }
+  }, [fetchNotifications]);
 
   const dismissNotification = useCallback((id: string) => {
     setAllNotifications((prev) => prev.filter((n) => n.id !== id));
