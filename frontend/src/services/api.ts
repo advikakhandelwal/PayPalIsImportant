@@ -12,9 +12,15 @@ import {
   UserProfile,
   UserRole,
   TrustScorecardData,
+  ContractMessage,
+  MessageThreadSummary,
 } from "@/types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.hostname}:8000/api`
+    : "http://localhost:8000/api");
 const TOKEN_KEY = "tp_access_token";
 
 export interface RegisterPayload {
@@ -63,6 +69,7 @@ export interface ApplicationSubmitPayload {
   coverLetter: string;
   bidAmount: number;
   currency?: string;
+  freelancerProfile?: Record<string, any>;
 }
 
 export interface DeliverableSubmitPayload {
@@ -193,6 +200,41 @@ export const apiClient = {
       body: JSON.stringify(profileData),
     });
     return handleResponse<UserProfile>(res);
+  },
+
+  async verifyPassword(password: string): Promise<{ verified: boolean; userId: string }> {
+    const res = await fetch(`${API_BASE_URL}/auth/verify-password`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ password }),
+    });
+    return handleResponse<{ verified: boolean; userId: string }>(res);
+  },
+
+  async forgotPassword(email: string): Promise<{
+    message: string;
+    resetToken?: string | null;
+    expiresInMinutes: number;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    return handleResponse<{
+      message: string;
+      resetToken?: string | null;
+      expiresInMinutes: number;
+    }>(res);
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, newPassword }),
+    });
+    return handleResponse<{ message: string }>(res);
   },
 
   // ── Project Marketplace Endpoints ─────────────────────────────────────────
@@ -353,5 +395,316 @@ export const apiClient = {
       body: JSON.stringify(payload),
     });
     return handleResponse<any>(res);
+  },
+
+  // ── PayPal Escrow & Payout Endpoints ──────────────────────────────────────
+  async getPayPalConfig(): Promise<{
+    mode: string;
+    intent?: string;
+    configured: boolean;
+    hasLiveCredentials: boolean;
+    clientId?: string | null;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/paypal/config`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse(res);
+  },
+
+  async createPayPalEscrowOrder(
+    contractId: string,
+    payload: { returnUrl?: string; cancelUrl?: string; idempotencyKey?: string } = {}
+  ): Promise<{
+    contractId: string;
+    orderId: string;
+    status: string;
+    approvalUrl?: string | null;
+    amount: number;
+    currency: string;
+    idempotencyKey: string;
+    mode: string;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/paypal/contracts/${contractId}/create-order`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(res);
+  },
+
+  async authorizePayPalEscrow(
+    contractId: string,
+    payload: { orderId?: string; authorizationId?: string; idempotencyKey?: string; simulate?: boolean }
+  ): Promise<{
+    contractId: string;
+    orderId?: string | null;
+    authorizationId: string;
+    status: string;
+    escrowStatus: string;
+    heldInEscrowAmount: number;
+    currency: string;
+    activeMilestoneId?: string | null;
+    idempotencyKey: string;
+    mode: string;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/paypal/contracts/${contractId}/authorize`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(res);
+  },
+
+  async capturePayPalMilestone(
+    contractId: string,
+    milestoneId: string,
+    payload: { noteToPayer?: string; idempotencyKey?: string } = {}
+  ): Promise<any> {
+    const res = await fetch(
+      `${API_BASE_URL}/paypal/contracts/${contractId}/milestones/${milestoneId}/capture`,
+      {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify(payload),
+      }
+    );
+    return handleResponse(res);
+  },
+
+  async payoutPayPalMilestone(
+    contractId: string,
+    milestoneId: string,
+    payload: { recipientEmail?: string; note?: string; idempotencyKey?: string } = {}
+  ): Promise<any> {
+    const res = await fetch(
+      `${API_BASE_URL}/paypal/contracts/${contractId}/milestones/${milestoneId}/payout`,
+      {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify(payload),
+      }
+    );
+    return handleResponse(res);
+  },
+
+  async refundPayPalEscrow(
+    contractId: string,
+    payload: { captureId?: string; amount?: number; reason?: string; voidRemainingAuthorization?: boolean } = {}
+  ): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/paypal/contracts/${contractId}/refund`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(res);
+  },
+
+  async getPayPalTransactions(contractId: string): Promise<any[]> {
+    const res = await fetch(`${API_BASE_URL}/paypal/contracts/${contractId}/transactions`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse(res);
+  },
+
+  // ── Upfront / Override Release & Direct Contract Chat ─────────────────────
+  async releaseMilestoneOverride(
+    contractId: string,
+    milestoneId: string,
+    password: string,
+    reason?: string
+  ): Promise<EscrowContract> {
+    const res = await fetch(
+      `${API_BASE_URL}/contracts/${contractId}/milestones/${milestoneId}/release-override`,
+      {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({ password, reason }),
+      }
+    );
+    return handleResponse<EscrowContract>(res);
+  },
+
+  async releaseContractUpfront(
+    contractId: string,
+    password: string,
+    reason?: string
+  ): Promise<EscrowContract> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/release-upfront`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ password, reason }),
+    });
+    return handleResponse<EscrowContract>(res);
+  },
+
+  async getMessageInbox(): Promise<MessageThreadSummary[]> {
+    const res = await fetch(`${API_BASE_URL}/contracts/messages/inbox`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<MessageThreadSummary[]>(res);
+  },
+
+  async getContractMessages(contractId: string): Promise<ContractMessage[]> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/messages`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<ContractMessage[]>(res);
+  },
+
+  async sendContractMessage(contractId: string, message: string): Promise<ContractMessage> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/messages`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ message }),
+    });
+    return handleResponse<ContractMessage>(res);
+  },
+
+  // ── Ledger & Sponsor Integrations (AG Grid, Zapier, Postman) ──────────────
+  async getGlobalPayPalLedger(): Promise<any[]> {
+    const res = await fetch(`${API_BASE_URL}/paypal/ledger`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<any[]>(res);
+  },
+
+  async getZapierStatus(): Promise<{ configured: boolean; webhookUrl: string; deliveries: any[] }> {
+    const res = await fetch(`${API_BASE_URL}/integrations/zapier`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse(res);
+  },
+
+  async updateZapierWebhook(
+    webhookUrl: string,
+    sendTest = false
+  ): Promise<{ configured: boolean; webhookUrl: string; testDelivery?: any; deliveries: any[] }> {
+    const res = await fetch(`${API_BASE_URL}/integrations/zapier`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ webhook_url: webhookUrl, send_test: sendTest }),
+    });
+    return handleResponse(res);
+  },
+
+  getPostmanCollectionUrl(): string {
+    return `${API_BASE_URL}/integrations/postman-collection`;
+  },
+
+  // ── Shared Disputes & Notifications Endpoints ─────────────────────────────
+  async getDisputes(): Promise<any[]> {
+    const res = await fetch(`${API_BASE_URL}/disputes`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<any[]>(res);
+  },
+
+  async createDispute(dispute: any): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/disputes`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({
+        id: dispute.id,
+        contractId: dispute.contractId,
+        status: dispute.status || "OPEN",
+        data: dispute,
+      }),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async updateDispute(dispute: any): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/disputes/${encodeURIComponent(dispute.id)}`, {
+      method: "PUT",
+      headers: getHeaders(),
+      body: JSON.stringify({
+        id: dispute.id,
+        contractId: dispute.contractId,
+        status: dispute.status || "OPEN",
+        data: dispute,
+      }),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async getNotifications(): Promise<any[]> {
+    const res = await fetch(`${API_BASE_URL}/notifications`, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+    return handleResponse<any[]>(res);
+  },
+
+  async createNotification(payload: {
+    userId: string;
+    userRole: string;
+    event: string;
+    title: string;
+    description: string;
+    linkHref: string;
+    entityId?: string;
+  }): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/notifications`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async markNotificationRead(id: string): Promise<void> {
+    await fetch(`${API_BASE_URL}/notifications/${encodeURIComponent(id)}/read`, {
+      method: "PATCH",
+      headers: getHeaders(),
+    });
+  },
+
+  async markAllNotificationsRead(): Promise<void> {
+    await fetch(`${API_BASE_URL}/notifications/read-all`, {
+      method: "POST",
+      headers: getHeaders(),
+    });
+  },
+
+  async dismissNotification(id: string): Promise<void> {
+    await fetch(`${API_BASE_URL}/notifications/${encodeURIComponent(id)}/dismiss`, {
+      method: "PATCH",
+      headers: getHeaders(),
+    });
+  },
+
+  async withdrawApplication(applicationId: string): Promise<{ withdrawn: boolean; applicationId: string }> {
+    const res = await fetch(`${API_BASE_URL}/applications/${encodeURIComponent(applicationId)}`, {
+      method: "DELETE",
+      headers: getHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async withdrawProject(projectId: string): Promise<{ withdrawn: boolean; projectId: string }> {
+    const res = await fetch(`${API_BASE_URL}/projects/${encodeURIComponent(projectId)}`, {
+      method: "DELETE",
+      headers: getHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async settleContractEarly(
+    contractId: string,
+    payload: { freelancerAmount: number; clientRefundAmount: number; reason?: string }
+  ): Promise<EscrowContract> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${encodeURIComponent(contractId)}/settle-early`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EscrowContract>(res);
   },
 };

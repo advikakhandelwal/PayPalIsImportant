@@ -12,7 +12,7 @@ import { ShieldCheck, User, Building, ArrowRight, AlertCircle } from "lucide-rea
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, currentUser, isAuthenticated, isHydrated, logout } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -55,30 +55,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleQuickDemoLogin = async (role: UserRole) => {
-    const demoEmail =
-      role === "FREELANCER" ? "vachan@talent.trustpay.ai" : "contracts@acmeventures.com";
-    const demoPass = "DemoPass123!";
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setSelectedRole(role);
-    setIsSubmitting(true);
-    setErrors({});
-
-    try {
-      const user = await login(demoEmail, demoPass);
-      if (user.role === "FREELANCER") {
-        router.push("/freelancer/dashboard");
-      } else {
-        router.push("/client/dashboard");
-      }
-    } catch (err: any) {
-      setErrors({ form: err.message || "Failed to log in with demo account." });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   return (
     <div className="min-h-[calc(100vh-10rem)] hero-gradient flex items-center justify-center px-4 py-16">
       <div className="w-full max-w-md space-y-6">
@@ -94,6 +70,26 @@ export default function LoginPage() {
             Access your milestone escrow contracts and active dashboard.
           </p>
         </div>
+
+        {/* Already Signed-In Session Banner */}
+        {isHydrated && isAuthenticated && (
+          <Card className="p-4 border-emerald-200 bg-emerald-50/70 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="text-xs text-emerald-900">
+              <p className="font-bold">Already signed in as {currentUser.name}</p>
+              <p className="text-[11px] text-emerald-700">Role: {currentUser.role}</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link href={currentUser.role === "FREELANCER" ? "/freelancer/dashboard" : "/client/dashboard"}>
+                <Button variant="primary" size="sm">
+                  Go to Dashboard
+                </Button>
+              </Link>
+              <Button variant="ghost" size="sm" onClick={logout}>
+                Sign Out
+              </Button>
+            </div>
+          </Card>
+        )}
 
         {/* Card Form */}
         <Card className="border-gray-200/80 rounded-3xl shadow-xl overflow-hidden bg-white">
@@ -147,15 +143,25 @@ export default function LoginPage() {
                 error={errors.email}
               />
 
-              <Input
-                label="Password"
-                type="password"
-                required
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                error={errors.password}
-              />
+              <div className="space-y-1.5">
+                <Input
+                  label="Password"
+                  type="password"
+                  required
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  error={errors.password}
+                />
+                <div className="flex justify-end">
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-xs font-semibold text-[#0070E0] hover:underline"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+              </div>
 
               <Button
                 type="submit"
@@ -166,35 +172,6 @@ export default function LoginPage() {
                 Log In
                 <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
-
-              {/* Fast Quick-Demo Login Buttons for Reviewers */}
-              <div className="pt-4 border-t border-gray-100 space-y-2.5">
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block text-center">
-                  Quick Demo Access
-                </span>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs"
-                    disabled={isSubmitting}
-                    onClick={() => handleQuickDemoLogin("FREELANCER")}
-                  >
-                    Demo Freelancer
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs"
-                    disabled={isSubmitting}
-                    onClick={() => handleQuickDemoLogin("CLIENT")}
-                  >
-                    Demo Client
-                  </Button>
-                </div>
-              </div>
             </CardContent>
           </form>
 

@@ -1,10 +1,15 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useMarketplace } from "@/context/MarketplaceContext";
+import { useNotifications } from "@/context/NotificationContext";
+import { RequireAuth } from "@/components/auth/RequireAuth";
+import { ContractChatPanel } from "@/components/contracts/ContractChatPanel";
+import { PayPalSmartButtons } from "@/components/paypal/PayPalSmartButtons";
+import { apiClient } from "@/services/api";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +33,7 @@ import {
   ShieldAlert,
   AlertCircle,
   Edit3,
+  Search,
   X,
   Send,
   Layers,
@@ -45,6 +51,7 @@ import {
   Download,
   FileCheck,
   Award,
+  MessageSquare,
 } from "lucide-react";
 
 type ClientTab = "overview" | "projects" | "post" | "proposals" | "contracts" | "profile" | "details";
@@ -82,6 +89,7 @@ function ClientDashboardContent() {
   const initialProjectId = searchParams.get("id") || "";
 
   const { currentUser, activeRole, setActiveRole, updateProfile, isHydrated } = useAuth();
+  const { addNotification } = useNotifications();
   const {
     projects,
     applications,
@@ -93,7 +101,22 @@ function ClientDashboardContent() {
     rejectApplication,
     approveMilestone,
     requestMilestoneRevision,
+    createPayPalEscrowOrder,
+    authorizePayPalEscrow,
+    releaseMilestoneOverride,
+    releaseContractUpfront,
+    submitReview,
+    withdrawProject,
+    settleContractEarly,
+    refreshMarketplace,
   } = useMarketplace();
+
+  const [withdrawingProjectId, setWithdrawingProjectId] = useState<string>("");
+  const [earlySettleModalOpen, setEarlySettleModalOpen] = useState(false);
+  const [earlyTalentShare, setEarlyTalentShare] = useState<string>("0");
+  const [earlyReason, setEarlyReason] = useState("");
+  const [earlyError, setEarlyError] = useState("");
+  const [isSettlingEarly, setIsSettlingEarly] = useState(false);
 
   // Frontend UI route guard: show access-denied state if wrong role.
   // NOTE: This is demo-only UI filtering. Real security lives in the backend.
@@ -117,16 +140,29 @@ function ClientDashboardContent() {
     }
   }, [searchParams]);
 
+  // Persist activeTab & selectedProjectId in URL query params so reload stays on the current tab
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", activeTab);
+    if (activeTab === "details" && selectedProjectId) {
+      url.searchParams.set("id", selectedProjectId);
+    } else {
+      url.searchParams.delete("id");
+    }
+    window.history.replaceState(null, "", url.toString());
+  }, [activeTab, selectedProjectId]);
+
   // Project Creation Wizard State: 'form' | 'preview'
   const [wizardStep, setWizardStep] = useState<"form" | "preview">("form");
   const [isEditingExisting, setIsEditingExisting] = useState<boolean>(false);
   const [editingProjectId, setEditingProjectId] = useState<string>("");
 
-  // Form Fields (Defaults to INR as required)
+  // Form Fields (USD-only settlement for PayPal Escrow compatibility)
   const [newTitle, setNewTitle] = useState("");
   const [newDomain, setNewDomain] = useState("Full-Stack Development");
-  const [newTotalBudget, setNewTotalBudget] = useState<number>(150000);
-  const [newCurrency, setNewCurrency] = useState("INR");
+  const [newTotalBudget, setNewTotalBudget] = useState<number>(2000);
+  const [newCurrency, setNewCurrency] = useState("USD");
   const [newDeadline, setNewDeadline] = useState("2026-12-15");
   const [newDescription, setNewDescription] = useState("");
   const [newSkills, setNewSkills] = useState<string[]>(["React", "TypeScript", "Tailwind CSS"]);
@@ -140,7 +176,7 @@ function ClientDashboardContent() {
       title: "Architecture & Foundation Setup",
       description: "Project scaffolding, core contracts, and responsive layout.",
       percentage: 25,
-      paymentAmount: 37500,
+      paymentAmount: 500,
       deadline: "2026-11-20",
       subtasksApproved: true,
       aiSubdivisionReasoning: "AI Advisory: Milestone divided into 2 technical subtasks totaling 25% of parent budget.",
@@ -152,8 +188,8 @@ function ClientDashboardContent() {
           description: "Establish design tokens, App Router layout, and contracts.",
           percentageOfMilestone: 40,
           percentageOfTotal: 10,
-          paymentAmount: 15000,
-          currency: "INR",
+          paymentAmount: 200,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "Foundational setup requires 40% of parent milestone workload.",
         },
@@ -164,8 +200,8 @@ function ClientDashboardContent() {
           description: "Setup App Router structure and initial state models.",
           percentageOfMilestone: 60,
           percentageOfTotal: 15,
-          paymentAmount: 22500,
-          currency: "INR",
+          paymentAmount: 300,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "State logic and scaffolding comprises 60% of milestone scope.",
         },
@@ -175,7 +211,7 @@ function ClientDashboardContent() {
       title: "Core Feature Implementation",
       description: "Main feature delivery, backend endpoint integration, and responsive verification.",
       percentage: 50,
-      paymentAmount: 75000,
+      paymentAmount: 1000,
       deadline: "2026-12-05",
       subtasksApproved: true,
       aiSubdivisionReasoning: "AI Advisory: Milestone divided into 2 technical subtasks totaling 50% of parent budget.",
@@ -187,8 +223,8 @@ function ClientDashboardContent() {
           description: "Implement interactive dashboard panels and business logic.",
           percentageOfMilestone: 60,
           percentageOfTotal: 30,
-          paymentAmount: 45000,
-          currency: "INR",
+          paymentAmount: 600,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "Core module development represents 60% of milestone effort.",
         },
@@ -199,8 +235,8 @@ function ClientDashboardContent() {
           description: "Form verification, submission endpoints, and error boundaries.",
           percentageOfMilestone: 40,
           percentageOfTotal: 20,
-          paymentAmount: 30000,
-          currency: "INR",
+          paymentAmount: 400,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "Integration and validation comprises 40% of milestone effort.",
         },
@@ -210,7 +246,7 @@ function ClientDashboardContent() {
       title: "Testing, Audit & Final Handover",
       description: "Criteria verification checklist, zero-leak scan, and documentation handover.",
       percentage: 25,
-      paymentAmount: 37500,
+      paymentAmount: 500,
       deadline: "2026-12-15",
       subtasksApproved: true,
       aiSubdivisionReasoning: "AI Advisory: Milestone divided into 2 technical subtasks totaling 25% of parent budget.",
@@ -222,8 +258,8 @@ function ClientDashboardContent() {
           description: "Pass automated linters, accessibility audit, and build trace.",
           percentageOfMilestone: 50,
           percentageOfTotal: 12.5,
-          paymentAmount: 18750,
-          currency: "INR",
+          paymentAmount: 250,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "Security and testing audit takes 50% of milestone scope.",
         },
@@ -234,8 +270,8 @@ function ClientDashboardContent() {
           description: "Clean artifacts, documentation handover, and deployment checklist.",
           percentageOfMilestone: 50,
           percentageOfTotal: 12.5,
-          paymentAmount: 18750,
-          currency: "INR",
+          paymentAmount: 250,
+          currency: "USD",
           status: "PENDING",
           aiReasoning: "Handover and release packaging constitutes remaining 50%.",
         },
@@ -250,35 +286,88 @@ function ClientDashboardContent() {
 
   // Proposals Filter State
   const [proposalFilter, setProposalFilter] = useState<"ALL" | "AI_SHORTLIST">("ALL");
+  const [appStatusFilter, setAppStatusFilter] = useState<"ONGOING" | "COMPLETED" | "ALL">("ONGOING");
+  const [appSearchQuery, setAppSearchQuery] = useState<string>("");
   const [filterByProjectId, setFilterByProjectId] = useState<string>("ALL");
 
-  // Ownership-filtered applications: only for this client's own projects
-  const myProjectIds = projects
+  // Ownership-filtered applications: exclude REJECTED so declined candidates never reappear for the client
+  const completedContractProjectIds = new Set(
+    contracts
+      .filter((c) => c.escrowStatus === "COMPLETED" || c.escrowStatus === "REFUNDED")
+      .map((c) => c.projectId)
+  );
+  const allClientProjectIds = projects
     .filter((p) => p.clientId === currentUser.id)
     .map((p) => p.id);
-  const localApplications = applications.filter((a) => myProjectIds.includes(a.projectId));
+  const allClientApplications = applications.filter(
+    (a) => allClientProjectIds.includes(a.projectId) && a.status !== "REJECTED"
+  );
+
+  const myProjectIds = projects
+    .filter(
+      (p) =>
+        p.clientId === currentUser.id &&
+        p.status !== "COMPLETED" &&
+        !completedContractProjectIds.has(p.id)
+    )
+    .map((p) => p.id);
+  const localApplications = applications.filter(
+    (a) => myProjectIds.includes(a.projectId) && a.status !== "REJECTED"
+  );
   // Request Revision Modal State
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [revisionMilestoneId, setRevisionMilestoneId] = useState<string>("");
   const [revisionNotes, setRevisionNotes] = useState("");
+  const [revisionErrorMsg, setRevisionErrorMsg] = useState("");
+  const [isSubmittingRevision, setIsSubmittingRevision] = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState("");
 
   // Candidate Dossier Inspection Modal State
   const [selectedApplicantForReview, setSelectedApplicantForReview] = useState<Application | null>(null);
   const [showCVPreviewModal, setShowCVPreviewModal] = useState<boolean>(false);
 
-  // Edit Company Profile State (with transparent location details)
+  // Edit Company Profile State (strictly user-provided, zero hardcoded defaults)
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [companyName, setCompanyName] = useState(currentUser.companyName || "Acme Global Technologies India Pvt Ltd");
-  const [contactName, setContactName] = useState(currentUser.name || "Client Representative");
-  const [companyDescription, setCompanyDescription] = useState(currentUser.companyDescription || "Enterprise venture studio building autonomous commerce protocols.");
-  const [industry, setIndustry] = useState(currentUser.domain || "Fintech & Autonomous Commerce");
-  const [country, setCountry] = useState(currentUser.country || "India");
-  const [stateName, setStateName] = useState(currentUser.state || "Karnataka");
-  const [city, setCity] = useState(currentUser.city || "Bengaluru");
-  const [address, setAddress] = useState(currentUser.address || "Block B, Tech Park, Outer Ring Road, Bellandur");
-  const [postalCode, setPostalCode] = useState(currentUser.postalCode || "560103");
+  const [companyName, setCompanyName] = useState(currentUser.companyName || "");
+  const [contactName, setContactName] = useState(currentUser.name || "");
+  const [companyDescription, setCompanyDescription] = useState(currentUser.companyDescription || currentUser.bio || "");
+  const [industry, setIndustry] = useState(currentUser.domain || "");
+  const [country, setCountry] = useState(currentUser.country || "");
+  const [stateName, setStateName] = useState(currentUser.state || "");
+  const [city, setCity] = useState(currentUser.city || "");
+  const [address, setAddress] = useState(currentUser.address || "");
+  const [postalCode, setPostalCode] = useState(currentUser.postalCode || "");
   const [profileSuccessMsg, setProfileSuccessMsg] = useState("");
+
+  // Client Contract Rating & Review State
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewText, setReviewText] = useState<string>("");
+  const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
+  const [reviewErrorMsg, setReviewErrorMsg] = useState<string>("");
+
+  useEffect(() => {
+    setCompanyName(currentUser.companyName || "");
+    setContactName(currentUser.name || "");
+    setCompanyDescription(currentUser.companyDescription || currentUser.bio || "");
+    setIndustry(currentUser.domain || "");
+    setCountry(currentUser.country || "");
+    setStateName(currentUser.state || "");
+    setCity(currentUser.city || "");
+    setAddress(currentUser.address || "");
+    setPostalCode(currentUser.postalCode || "");
+  }, [
+    currentUser.id,
+    currentUser.companyName,
+    currentUser.name,
+    currentUser.companyDescription,
+    currentUser.bio,
+    currentUser.domain,
+    currentUser.country,
+    currentUser.state,
+    currentUser.city,
+    currentUser.address,
+    currentUser.postalCode,
+  ]);
 
   // AI-Assisted Milestone Subtask Generator
   const handleGenerateAISubtasks = (milestoneIndex: number) => {
@@ -332,11 +421,188 @@ function ClientDashboardContent() {
     myContracts.find((c) => c.id === selectedContractId) ?? myContracts[0] ?? activeContract;
   const escrowStatusInfo = getEscrowStatusInfo(selectedContractForTab.escrowStatus);
 
-  // Metrics Calculations for Dashboard Overview
-  const totalProjectsCount = projects.length;
-  const openProjectsCount = projects.filter((p) => p.status === "OPEN").length;
-  const inProgressProjectsCount = projects.filter((p) => p.status === "IN_PROGRESS").length;
-  const completedProjectsCount = projects.filter((p) => p.status === "COMPLETED").length;
+  // PayPal Escrow Funding & Audit State
+  const [isFundingEscrow, setIsFundingEscrow] = useState(false);
+  const [acceptingAppId, setAcceptingAppId] = useState<string | null>(null);
+  const [acceptErrorMsg, setAcceptErrorMsg] = useState("");
+  const [paypalErrorMsg, setPaypalErrorMsg] = useState("");
+  const [paypalTxs, setPaypalTxs] = useState<any[]>([]);
+  const [contractSearch, setContractSearch] = useState("");
+  const [contractFilter, setContractFilter] = useState<"ALL" | "AWAITING_AUTHORIZATION" | "ACTIVE" | "COMPLETED">("ALL");
+  const [pendingEscrowCheckout, setPendingEscrowCheckout] = useState<{
+    contractId: string;
+    projectTitle: string;
+    talentName: string;
+    amount: number;
+    currency: string;
+    orderId: string;
+    approvalUrl?: string | null;
+    mode: string;
+  } | null>(null);
+  const [paypalReceipt, setPaypalReceipt] = useState<{
+    contractId: string;
+    orderId?: string | null;
+    authorizationId: string;
+    amount: number;
+    currency: string;
+  } | null>(null);
+
+  // Step-Up Password Security for Escrow Funding & Upfront Overrides
+  const [escrowSecurityPassword, setEscrowSecurityPassword] = useState("");
+  const [payerPaypalEmail, setPayerPaypalEmail] = useState("");
+  const [escrowSecurityVerified, setEscrowSecurityVerified] = useState(false);
+  const [escrowSecurityError, setEscrowSecurityError] = useState("");
+  const [isVerifyingEscrowPass, setIsVerifyingEscrowPass] = useState(false);
+
+  const [overrideAuthModal, setOverrideAuthModal] = useState<{
+    type: "MILESTONE" | "FULL_CONTRACT";
+    contractId: string;
+    milestoneId?: string;
+    title: string;
+    amount: number;
+    currency: string;
+    talentName: string;
+  } | null>(null);
+  const [overridePassword, setOverridePassword] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideError, setOverrideError] = useState("");
+  const [isExecutingOverride, setIsExecutingOverride] = useState(false);
+
+  const filteredContracts = myContracts.filter((c) => {
+    const q = contractSearch.trim().toLowerCase();
+    const matchesSearch =
+      !q ||
+      c.projectTitle.toLowerCase().includes(q) ||
+      c.freelancerName.toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q);
+    if (!matchesSearch) return false;
+    if (contractFilter === "AWAITING_AUTHORIZATION") return c.escrowStatus === "AWAITING_AUTHORIZATION";
+    if (contractFilter === "ACTIVE") return c.escrowStatus === "HELD_IN_ESCROW" || c.escrowStatus === "PARTIALLY_RELEASED";
+    if (contractFilter === "COMPLETED") return c.escrowStatus === "COMPLETED";
+    return true;
+  });
+
+  // Handle PayPal Sandbox checkout redirect return (?paypal=success&token=...&contractId=...)
+  useEffect(() => {
+    const ppStatus = searchParams.get("paypal");
+    const ppToken = searchParams.get("token");
+    const ppContractId = searchParams.get("contractId");
+    if (!ppStatus) return;
+
+    if (ppStatus === "success" && ppToken && ppContractId) {
+      setActiveTab("contracts");
+      setSelectedContractId(ppContractId);
+      setIsFundingEscrow(true);
+      setPaypalErrorMsg("");
+      authorizePayPalEscrow(ppContractId, ppToken)
+        .then(async () => {
+          const updated = await apiClient.getContract(ppContractId).catch(() => null);
+          const txs = await apiClient.getPayPalTransactions(ppContractId).catch(() => []);
+          setPaypalTxs(txs || []);
+          setPaypalReceipt({
+            contractId: ppContractId,
+            orderId: ppToken,
+            authorizationId: updated?.paypalAuthId || ppToken,
+            amount: updated?.totalBudget || 0,
+            currency: updated?.currency || "USD",
+          });
+          setActionSuccessMsg("PayPal Escrow Debited & Locked! Funds held safely and Milestone Step 1 is now ACTIVE.");
+          setTimeout(() => setActionSuccessMsg(""), 6000);
+        })
+        .catch((err: any) => {
+          setPaypalErrorMsg(err?.message || "Failed to authorize PayPal escrow order.");
+        })
+        .finally(() => {
+          setIsFundingEscrow(false);
+          if (typeof window !== "undefined") {
+            window.history.replaceState({}, "", "/client/dashboard?tab=contracts");
+          }
+        });
+    } else if (ppStatus === "cancel") {
+      setActiveTab("contracts");
+      if (ppContractId) setSelectedContractId(ppContractId);
+      setPaypalErrorMsg("PayPal escrow checkout was cancelled. Click 'Fund Escrow with PayPal' whenever ready.");
+      if (typeof window !== "undefined") {
+        window.history.replaceState({}, "", "/client/dashboard?tab=contracts");
+      }
+    }
+  }, [searchParams, authorizePayPalEscrow]);
+
+  // Fetch PayPal audit transactions when viewing active contract
+  useEffect(() => {
+    if (activeTab === "contracts" && selectedContractForTab?.id) {
+      apiClient
+        .getPayPalTransactions(selectedContractForTab.id)
+        .then((txs) => setPaypalTxs(txs || []))
+        .catch(() => setPaypalTxs([]));
+    }
+  }, [activeTab, selectedContractForTab?.id, selectedContractForTab?.escrowStatus, selectedContractForTab?.releasedAmount]);
+
+  const handleFundEscrowWithPayPal = async (contractId: string) => {
+    setIsFundingEscrow(true);
+    setPaypalErrorMsg("");
+    try {
+      const order = await createPayPalEscrowOrder(contractId);
+      if (order.mode === "mock") {
+        await authorizePayPalEscrow(contractId, order.orderId);
+        setActionSuccessMsg("PayPal Escrow Authorized! Funds locked and Step 1 is now ACTIVE.");
+        setTimeout(() => setActionSuccessMsg(""), 5000);
+        const txs = await apiClient.getPayPalTransactions(contractId).catch(() => []);
+        setPaypalTxs(txs);
+        setIsFundingEscrow(false);
+        return;
+      }
+      setPendingEscrowCheckout({
+        contractId: selectedContractForTab.id,
+        projectTitle: selectedContractForTab.projectTitle,
+        talentName: selectedContractForTab.freelancerName,
+        amount: selectedContractForTab.totalBudget,
+        currency: selectedContractForTab.currency,
+        orderId: order.orderId,
+        approvalUrl: order.approvalUrl,
+        mode: order.mode,
+      });
+      setEscrowSecurityVerified(false);
+      setEscrowSecurityPassword("");
+      setEscrowSecurityError("");
+      setIsFundingEscrow(false);
+    } catch (err: any) {
+      setPaypalErrorMsg(err?.message || "Could not create PayPal escrow order.");
+      setIsFundingEscrow(false);
+    }
+  };
+
+  const handleSmartButtonsAuthorized = useCallback(
+    async (res: { orderId?: string | null; authorizationId: string; amount: number; currency: string }) => {
+      if (!pendingEscrowCheckout) return;
+      const cid = pendingEscrowCheckout.contractId;
+      setPendingEscrowCheckout(null);
+      setPaypalReceipt({
+        contractId: cid,
+        orderId: res.orderId,
+        authorizationId: res.authorizationId,
+        amount: res.amount,
+        currency: res.currency,
+      });
+      await refreshMarketplace();
+      const txs = await apiClient.getPayPalTransactions(cid).catch(() => []);
+      setPaypalTxs(txs || []);
+      setActionSuccessMsg("PayPal Escrow Debited & Locked! Funds held safely and Milestone Step 1 is now ACTIVE.");
+      setTimeout(() => setActionSuccessMsg(""), 6000);
+    },
+    [pendingEscrowCheckout, refreshMarketplace]
+  );
+
+  const handleSmartButtonsError = useCallback((msg: string) => {
+    setPaypalErrorMsg(msg);
+  }, []);
+
+  // Strictly scope Client Dashboard projects to the logged-in client
+  const myProjects = projects.filter((p) => p.clientId === currentUser.id);
+  const totalProjectsCount = myProjects.length;
+  const openProjectsCount = myProjects.filter((p) => p.status === "OPEN").length;
+  const inProgressProjectsCount = myProjects.filter((p) => p.status === "IN_PROGRESS").length;
+  const completedProjectsCount = myProjects.filter((p) => p.status === "COMPLETED").length;
 
   // Milestone Calculations
   const totalPercentage = newMilestones.reduce((sum, m) => sum + (Number(m.percentage) || 0), 0);
@@ -414,7 +680,7 @@ function ClientDashboardContent() {
     setNewTitle(proj.title);
     setNewDomain(proj.domain);
     setNewTotalBudget(proj.totalBudget);
-    setNewCurrency(proj.currency || "INR");
+    setNewCurrency("USD");
     setNewDeadline(proj.deadline ? proj.deadline.split("T")[0] : "2026-12-15");
     setNewDescription(proj.description);
     setNewSkills(proj.requiredSkills || ["Next.js", "TypeScript"]);
@@ -441,8 +707,8 @@ function ClientDashboardContent() {
     setEditingProjectId("");
     setNewTitle("");
     setNewDomain("Full-Stack Development");
-    setNewTotalBudget(150000);
-    setNewCurrency("INR");
+    setNewTotalBudget(3000);
+    setNewCurrency("USD");
     setNewDeadline("2026-12-15");
     setNewDescription("");
     setNewSkills(["React", "TypeScript", "Tailwind CSS"]);
@@ -578,11 +844,47 @@ function ClientDashboardContent() {
     setActiveTab("proposals");
   };
 
-  // Candidate review handlers (wired to shared MarketplaceContext)
-  const handleAcceptCandidate = (appId: string) => {
-    acceptApplication(appId, currentUser.id);
-    setActionSuccessMsg('Candidate accepted! Demo escrow contract record created. Contract now visible to both parties.');
-    setTimeout(() => setActionSuccessMsg(""), 4000);
+  // Candidate review handlers (wired to shared MarketplaceContext + Immediate PayPal Escrow Checkout)
+  const handleAcceptCandidate = async (appId: string) => {
+    if (acceptingAppId) return;
+    setAcceptingAppId(appId);
+    setAcceptErrorMsg("");
+    setPaypalErrorMsg("");
+    try {
+      const createdContract = await acceptApplication(appId, currentUser.id);
+      setSelectedContractId(createdContract.id);
+      setActiveTab("contracts");
+      setActionSuccessMsg(
+        `Candidate accepted! Contract #${createdContract.id} created — please complete PayPal Escrow Authorization to lock funds.`
+      );
+      setTimeout(() => setActionSuccessMsg(""), 6000);
+
+      // Immediately prepare PayPal Orders v2 AUTHORIZE checkout modal
+      try {
+        const order = await createPayPalEscrowOrder(createdContract.id);
+        setEscrowSecurityVerified(false);
+        setEscrowSecurityPassword("");
+        setEscrowSecurityError("");
+        setPendingEscrowCheckout({
+          contractId: createdContract.id,
+          projectTitle: createdContract.projectTitle,
+          talentName: createdContract.freelancerName,
+          amount: createdContract.totalBudget,
+          currency: createdContract.currency,
+          orderId: order.orderId,
+          approvalUrl: order.approvalUrl,
+          mode: order.mode,
+        });
+      } catch (ppErr: any) {
+        setPaypalErrorMsg(
+          ppErr?.message || "Contract created! Click 'Fund Escrow with PayPal' below to lock funds."
+        );
+      }
+    } catch (err: any) {
+      setAcceptErrorMsg(err?.message || "Failed to accept candidate. Please try again.");
+    } finally {
+      setAcceptingAppId(null);
+    }
   };
 
   const handleDeclineCandidate = (appId: string) => {
@@ -591,52 +893,226 @@ function ClientDashboardContent() {
     setTimeout(() => setActionSuccessMsg(""), 2500);
   };
 
-  const handleApproveMilestone = (milestoneId: string) => {
-    approveMilestone(selectedContractForTab.id, milestoneId);
-    setActionSuccessMsg("Milestone approved! Payout released from escrow to talent.");
-    setTimeout(() => setActionSuccessMsg(""), 3500);
+  const handleApproveMilestone = async (milestoneId: string) => {
+    setPaypalErrorMsg("");
+    try {
+      const targetMs = selectedContractForTab.milestones.find((m) => m.id === milestoneId);
+      await approveMilestone(selectedContractForTab.id, milestoneId);
+      const payoutEmail =
+        selectedContractForTab.freelancerPayoutEmail ||
+        selectedContractForTab.freelancerEmail ||
+        "freelancer PayPal email";
+      addNotification({
+        userId: selectedContractForTab.freelancerId,
+        userRole: "FREELANCER",
+        event: "MILESTONE_APPROVED",
+        title: `Money Transferred via PayPal (${formatCurrency(targetMs?.paymentAmount || 0, selectedContractForTab.currency)})`,
+        description: `${currentUser.name} approved "${targetMs?.title || "Milestone"}" on ${selectedContractForTab.projectTitle}. Funds transferred to ${payoutEmail}.`,
+        linkHref: "/freelancer/dashboard?tab=contracts",
+        entityId: `payout-${selectedContractForTab.id}-${milestoneId}`,
+      });
+      setActionSuccessMsg("Milestone approved! Payout released via PayPal & freelancer notified.");
+      setTimeout(() => setActionSuccessMsg(""), 3500);
+      const txs = await apiClient.getPayPalTransactions(selectedContractForTab.id).catch(() => []);
+      setPaypalTxs(txs);
+    } catch (err: any) {
+      setPaypalErrorMsg(err?.message || "Failed to approve and capture milestone.");
+    }
+  };
+
+  const handleOverrideMilestoneRelease = (milestoneId: string, title: string, amt: number, curr: string) => {
+    setOverridePassword("");
+    setOverrideReason("");
+    setOverrideError("");
+    setOverrideAuthModal({
+      type: "MILESTONE",
+      contractId: selectedContractForTab.id,
+      milestoneId,
+      title,
+      amount: amt,
+      currency: curr,
+      talentName: selectedContractForTab.freelancerName,
+    });
+  };
+
+  const handleReleaseAllUpfront = (contractId: string) => {
+    setOverridePassword("");
+    setOverrideReason("");
+    setOverrideError("");
+    setOverrideAuthModal({
+      type: "FULL_CONTRACT",
+      contractId,
+      title: selectedContractForTab.projectTitle,
+      amount: selectedContractForTab.heldInEscrowAmount,
+      currency: selectedContractForTab.currency,
+      talentName: selectedContractForTab.freelancerName,
+    });
+  };
+
+  const handleConfirmOverrideSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!overrideAuthModal) return;
+    if (!overridePassword) {
+      setOverrideError("Account password is required to authorize this transfer.");
+      return;
+    }
+    setIsExecutingOverride(true);
+    setOverrideError("");
+    try {
+      if (overrideAuthModal.type === "MILESTONE" && overrideAuthModal.milestoneId) {
+        await releaseMilestoneOverride(
+          overrideAuthModal.contractId,
+          overrideAuthModal.milestoneId,
+          overridePassword,
+          overrideReason.trim() || "Client password-verified upfront milestone release"
+        );
+        setActionSuccessMsg(
+          `Password verified! ${formatCurrency(overrideAuthModal.amount, overrideAuthModal.currency)} released upfront to ${overrideAuthModal.talentName}.`
+        );
+      } else {
+        await releaseContractUpfront(
+          overrideAuthModal.contractId,
+          overridePassword,
+          overrideReason.trim() || "Client password-verified full upfront release"
+        );
+        setActionSuccessMsg(
+          `Password verified! Full balance (${formatCurrency(overrideAuthModal.amount, overrideAuthModal.currency)}) released to ${overrideAuthModal.talentName}.`
+        );
+      }
+      const cid = overrideAuthModal.contractId;
+      const releasedContract = contracts.find((c) => c.id === cid);
+      if (releasedContract) {
+        addNotification({
+          userId: releasedContract.freelancerId,
+          userRole: "FREELANCER",
+          event: "MILESTONE_APPROVED",
+          title: `Upfront PayPal Transfer (${formatCurrency(overrideAuthModal.amount, overrideAuthModal.currency)})`,
+          description: `${currentUser.name} authorized an upfront payout for "${overrideAuthModal.title}" to ${releasedContract.freelancerPayoutEmail || releasedContract.freelancerEmail || "your PayPal email"}.`,
+          linkHref: "/freelancer/dashboard?tab=contracts",
+          entityId: `override-${cid}-${overrideAuthModal.milestoneId || "full"}`,
+        });
+      }
+      setOverrideAuthModal(null);
+      setOverridePassword("");
+      setTimeout(() => setActionSuccessMsg(""), 5000);
+      const txs = await apiClient.getPayPalTransactions(cid).catch(() => []);
+      setPaypalTxs(txs);
+    } catch (err: any) {
+      setOverrideError(err?.message || "Password verification failed or payment release declined.");
+    } finally {
+      setIsExecutingOverride(false);
+    }
+  };
+
+  const handleVerifyEscrowPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEscrowSecurityError("");
+    if (!escrowSecurityPassword) {
+      setEscrowSecurityError("Please enter your TrustPay account password.");
+      return;
+    }
+    if (payerPaypalEmail && payerPaypalEmail.trim().toLowerCase().includes("@business.example.com")) {
+      setEscrowSecurityError(
+        "Do not use a @business.example.com seller email to pay! Use a US Personal buyer (@personal.example.com) or card."
+      );
+      return;
+    }
+    setIsVerifyingEscrowPass(true);
+    try {
+      await apiClient.verifyPassword(escrowSecurityPassword);
+      setEscrowSecurityVerified(true);
+    } catch (err: any) {
+      setEscrowSecurityError(err?.message || "Incorrect password. Owner verification failed.");
+    } finally {
+      setIsVerifyingEscrowPass(false);
+    }
   };
 
   const handleOpenRevisionModal = (milestoneId: string) => {
     setRevisionMilestoneId(milestoneId);
     setRevisionNotes("");
+    setRevisionErrorMsg("");
     setIsRevisionModalOpen(true);
   };
 
-  const handleConfirmRevision = (e: React.FormEvent) => {
+  const handleConfirmRevision = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!revisionNotes.trim()) return;
+    if (!revisionNotes.trim() || isSubmittingRevision) return;
 
-    requestMilestoneRevision(selectedContractForTab.id, revisionMilestoneId, revisionNotes.trim());
-    setIsRevisionModalOpen(false);
-    setActionSuccessMsg("Revision request with feedback sent to talent.");
-    setTimeout(() => setActionSuccessMsg(""), 3500);
+    setIsSubmittingRevision(true);
+    setRevisionErrorMsg("");
+    try {
+      await requestMilestoneRevision(selectedContractForTab.id, revisionMilestoneId, revisionNotes.trim());
+      setIsRevisionModalOpen(false);
+      setActionSuccessMsg("Revision request with feedback sent to talent.");
+      setTimeout(() => setActionSuccessMsg(""), 3500);
+    } catch (err: any) {
+      setRevisionErrorMsg(err?.message || "Cannot request revision on this milestone.");
+    } finally {
+      setIsSubmittingRevision(false);
+    }
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateProfile({
+    await updateProfile({
       name: contactName.trim(),
       companyName: companyName.trim(),
+      bio: companyDescription.trim(),
       companyDescription: companyDescription.trim(),
       domain: industry.trim(),
+      country: country.trim(),
+      state: stateName.trim(),
+      city: city.trim(),
+      address: address.trim(),
+      postalCode: postalCode.trim(),
     });
     setIsEditingProfile(false);
     setProfileSuccessMsg("Organization profile updated successfully!");
     setTimeout(() => setProfileSuccessMsg(""), 3000);
   };
 
-  // Applications filtered for Inbox
-  const displayedApplications = localApplications.filter((app) => {
-    const matchesProject = filterByProjectId === "ALL" || app.projectId === filterByProjectId;
-    const matchesFilter =
-      proposalFilter === "ALL" ||
-      (proposalFilter === "AI_SHORTLIST" && app.aiRecommendation && app.aiRecommendation.fitScore >= 90);
-    return matchesProject && matchesFilter;
+  // Applications filtered by status (Ongoing / Completed / Rejected / All) & AI Shortlist
+  const isProjectCompleted = (projectId: string) => {
+    const p = projects.find((pr) => pr.id === projectId);
+    return p?.status === "COMPLETED" || completedContractProjectIds.has(projectId);
+  };
+  const statusScopedApplications = allClientApplications.filter((app) => {
+    if (filterByProjectId !== "ALL" && app.projectId !== filterByProjectId) return false;
+    const projDone = isProjectCompleted(app.projectId);
+    if (appStatusFilter === "ONGOING" && projDone) return false;
+    if (appStatusFilter === "COMPLETED" && !projDone) return false;
+    const q = appSearchQuery.trim().toLowerCase();
+    if (q) {
+      const proj = projects.find((p) => p.id === app.projectId);
+      const hay = `${app.freelancerName} ${app.freelancerDomain} ${app.coverLetter} ${proj?.title || ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
   });
+  const shortlistCandidates = statusScopedApplications.filter(
+    (app) => app.aiRecommendation && (app.aiRecommendation.isTopPick || app.aiRecommendation.fitScore >= 60)
+  );
+  const displayedApplications =
+    proposalFilter === "AI_SHORTLIST"
+      ? (shortlistCandidates.length > 0 ? shortlistCandidates : statusScopedApplications)
+          .slice()
+          .sort((a, b) => (b.aiRecommendation?.fitScore || 0) - (a.aiRecommendation?.fitScore || 0))
+          .slice(0, shortlistCandidates.length > 0 ? undefined : 3)
+      : statusScopedApplications;
+
+  // Group displayedApplications by projectId so client can clearly distinguish projects
+  const groupedApplicationsByProject = Array.from(
+    displayedApplications.reduce((map, app) => {
+      const list = map.get(app.projectId) || [];
+      list.push(app);
+      map.set(app.projectId, list);
+      return map;
+    }, new Map<string, Application[]>())
+  );
 
   // Active Project for Details View
-  const selectedProject = projects.find((p) => p.id === selectedProjectId) || projects[0];
+  const selectedProject = myProjects.find((p) => p.id === selectedProjectId) || myProjects[0];
 
   if (!isClientRole) {
     return (
@@ -673,7 +1149,7 @@ function ClientDashboardContent() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* ── Top Header Banner ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-white border border-gray-100 shadow-xs">
         <div className="flex items-center gap-4">
@@ -731,7 +1207,7 @@ function ClientDashboardContent() {
             }`}
           >
             <FolderKanban className="w-3.5 h-3.5" />
-            <span>My Projects ({projects.length})</span>
+            <span>My Projects ({myProjects.length})</span>
           </button>
 
           <button
@@ -883,11 +1359,11 @@ function ClientDashboardContent() {
                   onClick={() => setActiveTab("projects")}
                   className="text-xs font-bold text-[#0070E0] hover:underline cursor-pointer"
                 >
-                  View All ({projects.length})
+                  View All ({myProjects.length})
                 </button>
               </CardHeader>
               <CardContent className="space-y-3 pt-3">
-                {projects.slice(0, 3).map((proj) => (
+                {myProjects.slice(0, 3).map((proj) => (
                   <div
                     key={proj.id}
                     className="p-3.5 rounded-xl border border-gray-100 hover:border-blue-200 transition-colors bg-gray-50/50 flex items-center justify-between gap-3 group"
@@ -1004,7 +1480,7 @@ function ClientDashboardContent() {
           </div>
 
           <div className="space-y-4">
-            {projects.map((proj) => {
+            {myProjects.map((proj) => {
               const statusBadgeVariant =
                 proj.status === "OPEN"
                   ? "paypal"
@@ -1225,23 +1701,17 @@ function ClientDashboardContent() {
                       />
                     </div>
 
-                    {/* Currency */}
+                    {/* Fixed USD Settlement */}
                     <div className="space-y-1.5 text-left">
                       <label className="block text-xs font-bold text-gray-700">
-                        Currency <span className="text-rose-500 font-bold ml-1">*</span>
+                        Settlement Currency
                       </label>
-                      <select
-                        value={newCurrency}
-                        onChange={(e) => setNewCurrency(e.target.value)}
-                        className="w-full h-11 px-4 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0070E0]"
-                      >
-                        <option value="INR">INR (₹)</option>
-                        <option value="USD">USD ($)</option>
-                        <option value="EUR">EUR (€)</option>
-                        <option value="GBP">GBP (£)</option>
-                        <option value="CAD">CAD ($)</option>
-                        <option value="AUD">AUD ($)</option>
-                      </select>
+                      <div className="w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm font-semibold text-gray-700 flex items-center justify-between">
+                        <span>USD ($)</span>
+                        <span className="text-[10px] font-bold uppercase text-[#0070E0] bg-blue-50 px-2 py-0.5 rounded-full">
+                          PayPal Standard
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -1739,6 +2209,26 @@ function ClientDashboardContent() {
                 <Edit3 className="w-3.5 h-3.5 mr-1" />
                 Edit Brief
               </Button>
+              {selectedProject.status === "OPEN" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={withdrawingProjectId === selectedProject.id}
+                  onClick={async () => {
+                    setWithdrawingProjectId(selectedProject.id);
+                    try {
+                      await withdrawProject(selectedProject.id);
+                      setActionSuccessMsg(`Project "${selectedProject.title}" has been withdrawn.`);
+                      setActiveTab("projects");
+                    } finally {
+                      setWithdrawingProjectId("");
+                    }
+                  }}
+                  className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50"
+                >
+                  {withdrawingProjectId === selectedProject.id ? "Withdrawing..." : "Withdraw Project"}
+                </Button>
+              )}
               <Button
                 variant="primary"
                 size="sm"
@@ -1826,25 +2316,47 @@ function ClientDashboardContent() {
                 </div>
               </div>
 
-              {/* Milestone execution timeline */}
+              {/* Milestone execution timeline (synced with active contract if assigned) */}
+              {(() => {
+                const linkedContract = myContracts.find((c) => c.projectId === selectedProject.id);
+                const liveMilestones = linkedContract?.milestones?.length
+                  ? linkedContract.milestones
+                  : selectedProject.milestones;
+                return (
               <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                    Milestone Schedule ({selectedProject.milestones.length} Steps)
+                    Milestone Schedule ({liveMilestones.length} Steps)
                   </h4>
-                  <span className="text-xs text-gray-500 font-mono">
-                    Escrow Ready • Step-by-Step Payouts
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 font-mono">
+                      {linkedContract ? `Contract #${linkedContract.id} • ${linkedContract.escrowStatus}` : "Escrow Ready • Step-by-Step Payouts"}
+                    </span>
+                    {linkedContract && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => {
+                          setSelectedContractId(linkedContract.id);
+                          setActiveTab("contracts");
+                        }}
+                      >
+                        Manage Live Contract
+                        <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-3">
-                  {selectedProject.milestones.map((ms) => {
+                  {liveMilestones.map((ms) => {
                     const statusInfo = getMilestoneStatusInfo(ms.status);
                     return (
                       <div
                         key={ms.id}
                         className={`p-4 rounded-2xl border transition-all ${
-                          ms.status === "ACTIVE"
+                          ms.status === "ACTIVE" || ms.status === "SUBMITTED"
                             ? "border-[#0070E0] bg-blue-50/20 ring-1 ring-[#0070E0]"
                             : ms.status === "RELEASED"
                             ? "border-emerald-200 bg-emerald-50/20"
@@ -1874,6 +2386,8 @@ function ClientDashboardContent() {
                   })}
                 </div>
               </div>
+                );
+              })()}
             </CardContent>
           </Card>
         </div>
@@ -1892,31 +2406,90 @@ function ClientDashboardContent() {
               </p>
             </div>
 
-            {/* Filter Toggle: All vs AI Shortlist */}
-            <div className="flex items-center gap-1.5 p-1 bg-gray-50 rounded-full border border-gray-200">
-              <button
-                onClick={() => setProposalFilter("ALL")}
-                className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
-                  proposalFilter === "ALL"
-                    ? "bg-white text-[#003087] shadow-sm ring-1 ring-gray-200"
-                    : "text-gray-500 hover:text-gray-900"
-                }`}
-              >
-                All Applicants ({localApplications.length})
-              </button>
-              <button
-                onClick={() => setProposalFilter("AI_SHORTLIST")}
-                className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
-                  proposalFilter === "AI_SHORTLIST"
-                    ? "bg-white text-purple-900 shadow-sm ring-1 ring-gray-200"
-                    : "text-gray-500 hover:text-gray-900"
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                AI Shortlist
-              </button>
+            {/* Filter Toggles: Status (Ongoing / Completed / All) & AI Shortlist */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 p-1 bg-gray-50 rounded-full border border-gray-200">
+                {(
+                  [
+                    { id: "ONGOING", label: "Ongoing" },
+                    { id: "COMPLETED", label: "Completed" },
+                    { id: "ALL", label: "All" },
+                  ] as const
+                ).map((st) => (
+                  <button
+                    key={st.id}
+                    onClick={() => setAppStatusFilter(st.id)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                      appStatusFilter === st.id
+                        ? "bg-white text-[#003087] shadow-sm ring-1 ring-gray-200"
+                        : "text-gray-500 hover:text-gray-900"
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1.5 p-1 bg-gray-50 rounded-full border border-gray-200">
+                <button
+                  onClick={() => setProposalFilter("ALL")}
+                  className={`px-3.5 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                    proposalFilter === "ALL"
+                      ? "bg-white text-[#003087] shadow-sm ring-1 ring-gray-200"
+                      : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  All ({statusScopedApplications.length})
+                </button>
+                <button
+                  onClick={() => setProposalFilter("AI_SHORTLIST")}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                    proposalFilter === "AI_SHORTLIST"
+                      ? "bg-white text-purple-900 shadow-sm ring-1 ring-gray-200"
+                      : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  AI Shortlist
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* Search & Project Filter Bar */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search applicants by name, project title, domain, or cover letter..."
+                value={appSearchQuery}
+                onChange={(e) => setAppSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 bg-white text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#0070E0]/30"
+              />
+            </div>
+            <select
+              value={filterByProjectId}
+              onChange={(e) => setFilterByProjectId(e.target.value)}
+              className="px-3.5 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-700"
+            >
+              <option value="ALL">All Projects</option>
+              {myProjects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {acceptErrorMsg && (
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center justify-between">
+              <span>{acceptErrorMsg}</span>
+              <button onClick={() => setAcceptErrorMsg("")} className="text-rose-500 hover:text-rose-800 ml-3">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
           {/* Project Specific Filter Pills if set */}
           {filterByProjectId !== "ALL" && (
@@ -1931,8 +2504,34 @@ function ClientDashboardContent() {
             </div>
           )}
 
-          <div className="space-y-4">
-            {displayedApplications.map((app) => (
+          <div className="space-y-6">
+            {groupedApplicationsByProject.map(([projId, projApps]) => {
+              const proj = projects.find((p) => p.id === projId);
+              return (
+                <div key={projId} className="space-y-3 p-4 rounded-3xl bg-gray-50/70 border border-gray-200/80">
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                    <div className="flex items-center gap-2">
+                      <FolderKanban className="w-4 h-4 text-[#0070E0]" />
+                      <h3 className="text-sm font-extrabold text-[#003087]">
+                        {proj?.title || `Project #${projId}`}
+                      </h3>
+                      {proj?.domain && (
+                        <Badge variant="paypal" size="sm">{proj.domain}</Badge>
+                      )}
+                      {proj?.status && (
+                        <Badge variant={proj.status === "COMPLETED" ? "success" : "neutral"} size="sm">
+                          {proj.status}
+                        </Badge>
+                      )}
+                    </div>
+                    <span className="text-xs font-bold text-gray-500">
+                      {projApps.length} Applicant{projApps.length === 1 ? "" : "s"}
+                      {proj ? ` • Budget: ${formatCurrency(proj.totalBudget, proj.currency)}` : ""}
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {projApps.map((app) => (
               <Card key={app.id} className="border-gray-100 card-hover bg-white">
                 <CardHeader className="pb-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2031,10 +2630,11 @@ function ClientDashboardContent() {
                           variant="primary"
                           size="sm"
                           className="text-xs"
+                          disabled={acceptingAppId === app.id}
                           onClick={() => handleAcceptCandidate(app.id)}
                         >
                           <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                          Accept Candidate &amp; Lock Escrow
+                          {acceptingAppId === app.id ? "Creating Escrow..." : "Accept & Fund Escrow"}
                         </Button>
                       </>
                     )}
@@ -2048,7 +2648,11 @@ function ClientDashboardContent() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
 
             {displayedApplications.length === 0 && (
               <div className="p-12 text-center text-gray-500 bg-white rounded-2xl border border-gray-100">
@@ -2079,35 +2683,102 @@ function ClientDashboardContent() {
             </Badge>
           </div>
 
-          {/* Contract Selector – shown when client has multiple contracts */}
-          {myContracts.length > 1 && (
-            <Card className="border-gray-100 bg-white p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <span className="text-xs font-bold text-gray-700 shrink-0">Select Contract:</span>
-                <select
-                  value={selectedContractId || selectedContractForTab.id}
-                  onChange={(e) => setSelectedContractId(e.target.value)}
-                  className="flex-1 h-10 px-3 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
-                >
-                  {myContracts.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.projectTitle} — {c.freelancerName} ({c.id})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </Card>
-          )}
-
           {myContracts.length === 0 && (
             <div className="p-12 text-center text-gray-500 bg-white rounded-2xl border border-gray-100">
               <Lock className="w-8 h-8 text-gray-300 mx-auto mb-2" />
               <p className="text-sm font-semibold">No active contracts yet.</p>
-              <p className="text-xs text-gray-400 mt-1">Accept a candidate proposal to create a demo escrow contract record.</p>
+              <p className="text-xs text-gray-400 mt-1">Accept a candidate proposal to create an escrow contract and fund it via PayPal.</p>
             </div>
           )}
 
           {myContracts.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Sidebar: Visual Contract Cards List + Search/Filter */}
+            <div className="lg:col-span-4 space-y-3">
+              <Card className="border-gray-100 bg-white p-3.5 rounded-2xl space-y-3 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-[#003087] uppercase tracking-wider">
+                    Your Contracts ({filteredContracts.length}/{myContracts.length})
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={contractSearch}
+                  onChange={(e) => setContractSearch(e.target.value)}
+                  placeholder="Search project, talent, or ID..."
+                  className="w-full h-9 px-3 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: "ALL", label: "All" },
+                    { id: "AWAITING_AUTHORIZATION", label: "Needs Funding" },
+                    { id: "ACTIVE", label: "Active" },
+                    { id: "COMPLETED", label: "Completed" },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setContractFilter(f.id as any)}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-colors cursor-pointer ${
+                        contractFilter === f.id
+                          ? "bg-[#003087] text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </Card>
+
+              <div className="space-y-2.5 max-h-[680px] overflow-y-auto pr-1">
+                {filteredContracts.map((c) => {
+                  const isSelected = c.id === selectedContractForTab.id;
+                  const cInfo = getEscrowStatusInfo(c.escrowStatus);
+                  const hasReviewPending = c.milestones.some((m) => m.status === "IN_REVIEW" || m.status === "SUBMITTED");
+                  const pct = c.totalBudget > 0 ? Math.round((c.releasedAmount / c.totalBudget) * 100) : 0;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSelectedContractId(c.id)}
+                      className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                        isSelected
+                          ? "border-[#0070E0] bg-blue-50/40 ring-2 ring-[#0070E0]/20 shadow-sm"
+                          : "border-gray-200 bg-white hover:border-blue-200"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <h4 className="font-bold text-xs text-gray-900 line-clamp-1">{c.projectTitle}</h4>
+                        <span className="font-extrabold text-xs text-[#003087] shrink-0">
+                          {formatCurrency(c.totalBudget, c.currency)}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mb-2 truncate">
+                        Talent: <strong className="text-gray-700">{c.freelancerName}</strong> • #{c.id}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                        <Badge variant={cInfo.variant} size="sm">{cInfo.label}</Badge>
+                        {hasReviewPending && (
+                          <Badge variant="inReview" size="sm">Submission Ready</Badge>
+                        )}
+                      </div>
+                      <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#0070E0] rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                    </button>
+                  );
+                })}
+                {filteredContracts.length === 0 && (
+                  <div className="p-6 text-center text-xs text-gray-400 bg-white rounded-2xl border border-gray-100">
+                    No contracts match your search/filter.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Panel: Selected Contract Full Escrow Workspace */}
+            <div className="lg:col-span-8">
           <Card className="border-gray-100 bg-white shadow-lg rounded-3xl overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-b border-gray-100">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2125,18 +2796,118 @@ function ClientDashboardContent() {
                       {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
                     </p>
                   </div>
+                  {(selectedContractForTab.escrowStatus === "HELD_IN_ESCROW" ||
+                    selectedContractForTab.escrowStatus === "PARTIALLY_RELEASED") &&
+                    selectedContractForTab.heldInEscrowAmount > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleReleaseAllUpfront(selectedContractForTab.id)}
+                        className="border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold"
+                      >
+                        <DollarSign className="w-3.5 h-3.5 mr-1" />
+                        Override &amp; Pay Full Upfront
+                      </Button>
+                    )}
+                  {selectedContractForTab.escrowStatus !== "COMPLETED" &&
+                    selectedContractForTab.escrowStatus !== "REFUNDED" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const held = selectedContractForTab.heldInEscrowAmount || 0;
+                          setEarlyTalentShare(String(Math.round(held * 0.5)));
+                          setEarlyReason("");
+                          setEarlyError("");
+                          setEarlySettleModalOpen(true);
+                        }}
+                        className="border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold"
+                      >
+                        End Early / Settle
+                      </Button>
+                    )}
                   <Link
-                    href={`/client/disputes/${selectedContractForTab.id}`}
+                    href={`/messages?contractId=${selectedContractForTab.id}`}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-50 hover:bg-blue-100 text-[#0070E0] border border-blue-200 transition-colors shadow-2xs"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-[#0070E0]" />
+                    <span>Messages</span>
+                  </Link>
+                  <Link
+                    href={`/disputes?contractId=${selectedContractForTab.id}`}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-2xs"
                   >
                     <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Dispute Resolution Hub</span>
+                    <span>Dispute Resolution</span>
                   </Link>
                 </div>
               {/* Financial Balances */}
               </div>
             </CardHeader>
             <CardContent className="space-y-6 pt-6">
+              {/* PayPal Escrow Payment Receipt / Live Funded Status Banner */}
+              {(paypalReceipt?.contractId === selectedContractForTab.id ||
+                selectedContractForTab.escrowStatus === "HELD_IN_ESCROW" ||
+                selectedContractForTab.escrowStatus === "PARTIALLY_RELEASED" ||
+                selectedContractForTab.escrowStatus === "COMPLETED") && (
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="text-xs space-y-0.5">
+                      <p className="font-extrabold text-emerald-900">
+                        Escrow Funded &amp; Debited via PayPal:{" "}
+                        {formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}
+                      </p>
+                      <p className="text-emerald-800">
+                        {selectedContractForTab.paypalAuthId
+                          ? `PayPal Authorization ID: ${selectedContractForTab.paypalAuthId}`
+                          : "Escrow Hold Active"}
+                        {selectedContractForTab.paypalCaptureId
+                          ? ` • Latest Capture ID: ${selectedContractForTab.paypalCaptureId}`
+                          : " • Funds held securely until you approve deliverables"}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="success" size="sm">Escrow Locked</Badge>
+                </div>
+              )}
+
+              {/* PayPal Escrow Funding Callout when AWAITING_AUTHORIZATION */}
+              {selectedContractForTab.escrowStatus === "AWAITING_AUTHORIZATION" && (
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-[#003087]/5 via-[#0070E0]/10 to-indigo-50 border border-[#0070E0]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-[#0070E0]" />
+                      <h4 className="text-sm font-extrabold text-[#003087]">
+                        Fund Escrow via PayPal Sandbox (Orders v2 Authorize)
+                      </h4>
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      Lock <strong>{formatCurrency(selectedContractForTab.totalBudget, selectedContractForTab.currency)}</strong> into PayPal escrow to unlock Milestone Step 1. Funds are only captured partwise as you approve deliverables.
+                    </p>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    disabled={isFundingEscrow}
+                    onClick={() => handleFundEscrowWithPayPal(selectedContractForTab.id)}
+                    className="shrink-0 bg-[#0070E0] hover:bg-[#003087] text-white font-bold shadow-md"
+                  >
+                    <Lock className="w-4 h-4 mr-1.5" />
+                    {isFundingEscrow ? "Connecting to PayPal..." : "Fund Escrow with PayPal"}
+                  </Button>
+                </div>
+              )}
+
+              {paypalErrorMsg && (
+                <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between">
+                  <span>{paypalErrorMsg}</span>
+                  <button onClick={() => setPaypalErrorMsg("")} className="text-red-500 hover:text-red-800 ml-3">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-100">
                 <div>
                   <span className="text-xs text-gray-500 block">Funds Held in Escrow</span>
@@ -2153,8 +2924,91 @@ function ClientDashboardContent() {
                 <div>
                   <span className="text-xs text-gray-500 block">Settlement Progress</span>
                   <span className="text-lg font-bold text-[#0070E0]">
-                    {Math.round((selectedContractForTab.releasedAmount / selectedContractForTab.totalBudget) * 100)}%
+                    {selectedContractForTab.totalBudget > 0
+                      ? Math.round((selectedContractForTab.releasedAmount / selectedContractForTab.totalBudget) * 100)
+                      : 0}
+                    %
                   </span>
+                </div>
+              </div>
+
+              {/* Assigned Talent & Project Brief Overview */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="p-4 rounded-2xl bg-blue-50/40 border border-blue-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#003087]">
+                      Assigned Talent Working on Project
+                    </span>
+                    {selectedContractForTab.freelancerRating ? (
+                      <Badge variant="success" size="sm">★ {selectedContractForTab.freelancerRating.toFixed(1)}</Badge>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#0070E0] text-white flex items-center justify-center font-bold text-sm shrink-0">
+                      {selectedContractForTab.freelancerName?.charAt(0).toUpperCase() || "T"}
+                    </div>
+                    <div className="min-w-0 text-xs">
+                      <p className="font-bold text-gray-900 truncate">{selectedContractForTab.freelancerName}</p>
+                      <p className="text-gray-500 truncate">
+                        {selectedContractForTab.freelancerDomain || "Freelancer"}
+                        {selectedContractForTab.freelancerEmail ? ` • ${selectedContractForTab.freelancerEmail}` : ""}
+                      </p>
+                      {(selectedContractForTab.freelancerPayoutEmail || selectedContractForTab.freelancerEmail) && (
+                        <p className="text-[11px] text-[#003087] font-medium truncate mt-0.5">
+                          PayPal Payout Email:{" "}
+                          <span className="font-mono">
+                            {selectedContractForTab.freelancerPayoutEmail || selectedContractForTab.freelancerEmail}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {selectedContractForTab.freelancerBadges && selectedContractForTab.freelancerBadges.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {selectedContractForTab.freelancerBadges.map((b) => (
+                        <Badge key={b} variant="paypal" size="sm">{b}</Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                      Project Brief &amp; Deadline
+                    </span>
+                    <span className="text-[11px] font-semibold text-[#003087]">
+                      Due: {selectedContractForTab.projectDeadline ? formatDate(selectedContractForTab.projectDeadline) : "Flexible"}
+                    </span>
+                  </div>
+                  <p className="text-gray-600 line-clamp-3 leading-relaxed">
+                    {selectedContractForTab.projectDescription || "Escrow milestone contract active."}
+                  </p>
+                  <div className="pt-1">
+                    <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
+                      <span>Milestone Progress</span>
+                      <span className="font-bold text-[#003087]">
+                        {selectedContractForTab.milestones.filter((m) => m.status === "RELEASED").length} /{" "}
+                        {selectedContractForTab.milestones.length} Completed
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#0070E0] rounded-full transition-all"
+                        style={{
+                          width: `${
+                            selectedContractForTab.milestones.length > 0
+                              ? Math.round(
+                                  (selectedContractForTab.milestones.filter((m) => m.status === "RELEASED").length /
+                                    selectedContractForTab.milestones.length) *
+                                    100
+                                )
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2296,11 +3150,17 @@ function ClientDashboardContent() {
                                   </span>
                                   <span className="text-[10px] text-purple-600 font-normal">Advisory Only</span>
                                 </div>
-                                <ul className="text-[11px] text-purple-800 space-y-0.5 pt-1">
+                                <ul className="text-[11px] text-purple-800 space-y-1 pt-1">
                                   {ms.submission.aiVerificationReport.checklist.map((item, idx) => (
-                                    <li key={idx} className="flex items-center gap-1">
-                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                      <span>{item.criterion}: {item.evidenceNotes}</span>
+                                    <li key={idx} className="flex items-start gap-1.5">
+                                      {item.passed ? (
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                                      ) : (
+                                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                                      )}
+                                      <span className={item.passed ? "text-purple-900" : "text-amber-800"}>
+                                        {item.criterion}: {item.evidenceNotes}
+                                      </span>
                                     </li>
                                   ))}
                                 </ul>
@@ -2314,39 +3174,204 @@ function ClientDashboardContent() {
                             <span className="font-bold text-gray-800">
                               Disbursement: {formatCurrency(ms.paymentAmount, ms.currency)} ({ms.percentage}%)
                             </span>
-                            <span className="text-gray-400 ml-2">Due {formatDate(ms.deadline)}</span>
+                            <span className="text-gray-400 ml-2">
+                              Due {ms.deadline || selectedContractForTab.projectDeadline ? formatDate(ms.deadline || selectedContractForTab.projectDeadline!) : "No deadline set"}
+                            </span>
                           </div>
 
-                          {/* Client Approval Controls */}
-                          {(ms.status === "IN_REVIEW" || ms.status === "SUBMITTED") && (
-                            <div className="flex items-center gap-2">
+                          {/* Client Approval & Override Controls */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {ms.status === "ACTIVE" && !ms.submission && (
+                              <span className="text-[11px] text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full font-medium">
+                                Awaiting talent submission
+                              </span>
+                            )}
+                            {ms.status === "ACTIVE" && (
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="text-xs text-amber-700 hover:bg-amber-50"
-                                onClick={() => handleOpenRevisionModal(ms.id)}
+                                className="text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                onClick={() => handleOverrideMilestoneRelease(ms.id, ms.title, ms.paymentAmount, ms.currency)}
                               >
-                                Request Changes
+                                <DollarSign className="w-3.5 h-3.5 mr-1" />
+                                Release Upfront (Override)
                               </Button>
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                className="text-xs"
-                                onClick={() => handleApproveMilestone(ms.id)}
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                                Approve &amp; Release Payment
-                              </Button>
-                            </div>
-                          )}
+                            )}
+                            {(ms.status === "IN_REVIEW" || ms.status === "SUBMITTED" || ms.status === "REVISION_REQUESTED") && (
+                              <>
+                                {ms.status !== "REVISION_REQUESTED" &&
+                                  Boolean(ms.submission || (ms.submissionHistory && ms.submissionHistory.length > 0)) && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-xs text-amber-700 hover:bg-amber-50"
+                                    onClick={() => handleOpenRevisionModal(ms.id)}
+                                  >
+                                    Request Changes
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  className="text-xs"
+                                  onClick={() => handleApproveMilestone(ms.id)}
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                  Approve &amp; Release Payment
+                                </Button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
+
+              {/* PayPal Escrow Audit Ledger */}
+              {paypalTxs.length > 0 && (
+                <div className="pt-4 border-t border-gray-100 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-[#003087] uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-[#0070E0]" />
+                      PayPal Escrow Audit Ledger ({paypalTxs.length})
+                    </h3>
+                    <Badge variant="paypal" size="sm">PayPal {paypalTxs[0]?.mode?.toUpperCase() || "SANDBOX"}</Badge>
+                  </div>
+                  <div className="space-y-2">
+                    {paypalTxs.map((tx) => (
+                      <div
+                        key={tx.id}
+                        className="p-3 rounded-xl bg-gray-50 border border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                      >
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-800">{tx.operation}</span>
+                            <Badge variant={tx.status === "COMPLETED" ? "success" : "warning"} size="sm">
+                              {tx.status}
+                            </Badge>
+                          </div>
+                          <div className="text-[11px] font-mono text-gray-500 flex flex-wrap gap-x-3">
+                            {tx.paypalOrderId && <span>Order: {tx.paypalOrderId}</span>}
+                            {tx.paypalAuthId && <span>Auth: {tx.paypalAuthId}</span>}
+                            {tx.paypalCaptureId && <span>Capture: {tx.paypalCaptureId}</span>}
+                            {tx.paypalPayoutBatchId && <span>Payout: {tx.paypalPayoutBatchId}</span>}
+                            {tx.paypalRefundId && <span>Refund: {tx.paypalRefundId}</span>}
+                          </div>
+                        </div>
+                        <span className="font-bold text-[#003087] shrink-0">
+                          {formatCurrency(tx.amount, tx.currency)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Client Rating & Review for Completed Contracts */}
+              {selectedContractForTab.escrowStatus === "COMPLETED" && (
+                <div className="p-5 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Award className="w-5 h-5 text-amber-600" />
+                      <h4 className="text-sm font-extrabold text-gray-900">
+                        Rate &amp; Review {selectedContractForTab.freelancerName}
+                      </h4>
+                    </div>
+                    {selectedContractForTab.clientRating && (
+                      <Badge variant="success" size="sm">
+                        Rated {selectedContractForTab.clientRating}/5 ★
+                      </Badge>
+                    )}
+                  </div>
+
+                  {selectedContractForTab.clientRating ? (
+                    <div className="bg-white p-4 rounded-xl border border-amber-100 text-xs space-y-1.5">
+                      <div className="flex items-center gap-1 text-amber-500 font-bold text-sm">
+                        {"★".repeat(Math.round(selectedContractForTab.clientRating))}
+                        {"☆".repeat(Math.max(0, 5 - Math.round(selectedContractForTab.clientRating)))}
+                        <span className="text-xs text-gray-600 ml-2">
+                          ({selectedContractForTab.clientRating}/5)
+                        </span>
+                      </div>
+                      {selectedContractForTab.clientReview && (
+                        <p className="text-gray-700 leading-relaxed">
+                          &ldquo;{selectedContractForTab.clientReview}&rdquo;
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        setIsSubmittingReview(true);
+                        setReviewErrorMsg("");
+                        try {
+                          await submitReview(
+                            selectedContractForTab.id,
+                            reviewRating,
+                            reviewText.trim() || undefined
+                          );
+                          setReviewText("");
+                          setActionSuccessMsg("Thank you! Your rating and review have been saved to the freelancer's Trust Scorecard.");
+                          setTimeout(() => setActionSuccessMsg(""), 4000);
+                        } catch (err: any) {
+                          setReviewErrorMsg(err?.message || "Failed to submit rating.");
+                        } finally {
+                          setIsSubmittingReview(false);
+                        }
+                      }}
+                      className="space-y-3 bg-white p-4 rounded-xl border border-amber-100"
+                    >
+                      {reviewErrorMsg && (
+                        <p className="text-xs text-rose-600 font-semibold">{reviewErrorMsg}</p>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-700">Star Rating:</span>
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() => setReviewRating(star)}
+                              className={`text-xl leading-none cursor-pointer transition-transform hover:scale-110 ${
+                                star <= reviewRating ? "text-amber-500" : "text-gray-300"
+                              }`}
+                            >
+                              ★
+                            </button>
+                          ))}
+                        </div>
+                        <span className="text-xs text-gray-500 ml-1">({reviewRating}/5)</span>
+                      </div>
+                      <Textarea
+                        label="Review Feedback (Optional)"
+                        rows={2}
+                        placeholder="Share how the freelancer performed on quality, communication, and deadlines..."
+                        value={reviewText}
+                        onChange={(e) => setReviewText(e.target.value)}
+                      />
+                      <div className="flex justify-end">
+                        <Button type="submit" variant="primary" size="sm" isLoading={isSubmittingReview}>
+                          Submit Rating &amp; Review
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
+
+              {/* Direct Project Discussion with Assigned Talent */}
+              <ContractChatPanel
+                contractId={selectedContractForTab.id}
+                counterpartyName={selectedContractForTab.freelancerName}
+                counterpartyRoleLabel="Talent"
+              />
             </CardContent>
           </Card>
+            </div>
+          </div>
           )}
         </div>
       )}
@@ -2390,15 +3415,21 @@ function ClientDashboardContent() {
                 <div className="space-y-4 text-xs">
                   <div>
                     <span className="font-semibold text-gray-700 block mb-1">Company Description:</span>
-                    <p className="text-gray-600 leading-relaxed bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                      {currentUser.companyDescription || "Enterprise venture studio building autonomous commerce protocols."}
-                    </p>
+                    {currentUser.companyDescription || currentUser.bio ? (
+                      <p className="text-gray-600 leading-relaxed bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                        {currentUser.companyDescription || currentUser.bio}
+                      </p>
+                    ) : (
+                      <p className="text-gray-400 italic bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                        No company description added yet. Click Edit Profile to add details.
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <span className="font-semibold text-gray-700 block mb-1">Primary Contact:</span>
-                      <span className="text-gray-800 font-bold">{contactName}</span>
+                      <span className="text-gray-800 font-bold">{contactName || currentUser.name}</span>
                     </div>
                     <div>
                       <span className="font-semibold text-gray-700 block mb-1">Business Email:</span>
@@ -2406,55 +3437,63 @@ function ClientDashboardContent() {
                     </div>
                   </div>
 
-                  {/* Client Location & Registered Business Address */}
-                  <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#003087]">
-                        <MapPin className="w-4 h-4 text-[#0070E0]" />
-                        <span>Registered Business Location</span>
+                  {/* Client Location & Registered Business Address (only if provided) */}
+                  {city || stateName || country || address ? (
+                    <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-[#003087]">
+                          <MapPin className="w-4 h-4 text-[#0070E0]" />
+                          <span>Business Location</span>
+                        </div>
                       </div>
-                      <Badge variant="warning" size="sm">
-                        Address Provided (Pending Independent Verification)
-                      </Badge>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                      <div>
-                        <span className="text-gray-400 block font-medium">City:</span>
-                        <strong className="text-gray-800">{city}</strong>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        {city && (
+                          <div>
+                            <span className="text-gray-400 block font-medium">City:</span>
+                            <strong className="text-gray-800">{city}</strong>
+                          </div>
+                        )}
+                        {stateName && (
+                          <div>
+                            <span className="text-gray-400 block font-medium">State / Province:</span>
+                            <strong className="text-gray-800">{stateName}</strong>
+                          </div>
+                        )}
+                        {country && (
+                          <div>
+                            <span className="text-gray-400 block font-medium">Country:</span>
+                            <strong className="text-gray-800">{country}</strong>
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <span className="text-gray-400 block font-medium">State / Province:</span>
-                        <strong className="text-gray-800">{stateName}</strong>
-                      </div>
-                      <div>
-                        <span className="text-gray-400 block font-medium">Country:</span>
-                        <strong className="text-gray-800">{country}</strong>
-                      </div>
-                    </div>
 
-                    <div className="pt-2 border-t border-gray-200 text-xs">
-                      <span className="text-gray-400 block font-medium">Complete Business Address:</span>
-                      <p className="text-gray-700 mt-0.5 font-medium">
-                        {address} {postalCode ? "(" + postalCode + ")" : ""}
-                      </p>
-                      <p className="text-[11px] text-gray-400 mt-1 italic">
-                        Transparently shared with evaluating freelancers. Not publicly indexed to unauthenticated web visitors.
-                      </p>
+                      {address && (
+                        <div className="pt-2 border-t border-gray-200 text-xs">
+                          <span className="text-gray-400 block font-medium">Business Address:</span>
+                          <p className="text-gray-700 mt-0.5 font-medium">
+                            {address} {postalCode ? `(${postalCode})` : ""}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  ) : (
+                    <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-gray-400 italic">
+                      No business address added (optional — click Edit Profile to add one).
+                    </div>
+                  )}
 
                   <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span><strong>Verified Escrow Client:</strong> Milestone disbursements verified through PayPal sandbox API.</span>
+                    <span><strong>Escrow Account:</strong> Milestone disbursements powered by PayPal Sandbox API.</span>
                   </div>
                 </div>
               ) : (
                 <form onSubmit={handleSaveProfile} className="space-y-4 pt-2">
                   <Input
                     label="Company / Brand Name"
-                    required
                     value={companyName}
+                    placeholder="e.g. Acme Studio"
                     onChange={(e) => setCompanyName(e.target.value)}
                   />
 
@@ -2467,15 +3506,15 @@ function ClientDashboardContent() {
 
                   <Input
                     label="Industry / Domain"
-                    required
                     value={industry}
+                    placeholder="e.g. Fintech, SaaS, E-Commerce"
                     onChange={(e) => setIndustry(e.target.value)}
                   />
 
                   <Textarea
                     label="Company Description"
-                    required
                     rows={3}
+                    placeholder="Describe your company or project focus..."
                     value={companyDescription}
                     onChange={(e) => setCompanyDescription(e.target.value)}
                   />
@@ -2545,19 +3584,19 @@ function ClientDashboardContent() {
         </div>
       )}
 
-      {/* ── MODAL: COMPREHENSIVE CANDIDATE DOSSIER & CV EVALUATION ── */}
+      {/* ── MODAL: FULL-SCREEN CANDIDATE DOSSIER & CV PREVIEW ── */}
       {selectedApplicantForReview && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden my-8 animate-slide-up">
-            {/* Modal Header */}
-            <div className="p-6 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border-b border-gray-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5">
+          <div className="w-[96vw] max-w-7xl h-[92vh] bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col animate-slide-up">
+            {/* Top Dossier Header */}
+            <div className="px-6 py-4 bg-white border-b border-gray-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-[#003087] text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                <div className="w-11 h-11 rounded-2xl bg-[#003087] text-white flex items-center justify-center font-bold text-lg shadow-xs">
                   {selectedApplicantForReview.freelancerName.charAt(0).toUpperCase()}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold text-[#003087]">
+                    <h3 className="text-lg font-extrabold text-[#003087]">
                       {selectedApplicantForReview.freelancerName}
                     </h3>
                     <Badge variant="paypal" size="sm">
@@ -2569,184 +3608,215 @@ function ClientDashboardContent() {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedApplicantForReview(null)}
-                className="text-gray-400 hover:text-gray-600 p-2 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                  Applied: {formatDate(selectedApplicantForReview.createdAt)}
+                </span>
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-[#003087] border border-blue-200">
+                  Bid: {formatCurrency(selectedApplicantForReview.bidAmount, selectedApplicantForReview.currency)}
+                </span>
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  {selectedApplicantForReview.trustScorecard.rating ?? "New"} ★ ({selectedApplicantForReview.trustScorecard.onTimeDeliveryRate ?? 100}% on-time)
+                </span>
+                <button
+                  onClick={() => setSelectedApplicantForReview(null)}
+                  className="text-gray-400 hover:text-gray-700 p-2 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
-              {/* Proposal & Bid Highlights */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-gray-50 border border-gray-100 text-xs">
-                <div>
-                  <span className="text-gray-400 block font-medium">Proposed Bid:</span>
-                  <span className="text-base font-extrabold text-[#003087]">
-                    {formatCurrency(selectedApplicantForReview.bidAmount, selectedApplicantForReview.currency)}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-400 block font-medium">Estimated Delivery:</span>
-                  <span className="text-base font-bold text-emerald-600">
-                    {selectedApplicantForReview.estimatedDeliveryDays || 14} Days
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-400 block font-medium">Trust Score:</span>
-                  <span className="text-base font-bold text-gray-900">
-                    {selectedApplicantForReview.trustScorecard.rating} ★ ({selectedApplicantForReview.trustScorecard.onTimeDeliveryRate}% on-time)
-                  </span>
-                </div>
-              </div>
-
-              {/* Cover Letter */}
-              <div>
-                <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
-                  Application Cover Letter
-                </h4>
-                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 text-xs text-gray-700 leading-relaxed">
-                  {selectedApplicantForReview.coverLetter}
-                </div>
-              </div>
-
-              {/* Technical Skills & Expertise */}
-              <div>
-                <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
-                  Technical Expertise &amp; Verified Skills
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {(selectedApplicantForReview.freelancerProfile?.skills || [
-                    "React", "Next.js", "TypeScript", "Tailwind CSS", "FastAPI", "PostgreSQL"
-                  ]).map((skill, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-[#003087] border border-blue-200"
-                    >
-                      {skill}
+            {/* Scrollable Body: Full-Width CV Viewport + Two-Column Bottom Summary */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 bg-gray-50/40">
+              {/* Main Full-Width CV Preview */}
+              <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-xs">
+                <div className="px-4 py-2.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <FileCheck className="w-4 h-4 text-sky-400" />
+                    <span>
+                      {selectedApplicantForReview.freelancerProfile?.cvFile?.name || "No CV Document Attached"}
                     </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Work Experience & Education */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2">
-                  <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <Briefcase className="w-3.5 h-3.5 text-[#0070E0]" />
-                    Work Experience ({selectedApplicantForReview.freelancerProfile?.experienceYears || 6} Years)
-                  </h5>
-                  <ul className="text-xs text-gray-600 space-y-1.5 list-disc list-inside">
-                    {(selectedApplicantForReview.freelancerProfile?.experience || [
-                      "Lead Frontend Engineer at Web3 FinTech (2023 - Present)",
-                      "Senior Software Developer at CloudScale Systems (2021 - 2023)"
-                    ]).map((exp, idx) => (
-                      <li key={idx}>{exp}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2">
-                  <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <Award className="w-3.5 h-3.5 text-[#0070E0]" />
-                    Education &amp; Credentials
-                  </h5>
-                  <ul className="text-xs text-gray-600 space-y-1.5 list-disc list-inside">
-                    {(selectedApplicantForReview.freelancerProfile?.education || [
-                      "B.Tech in Computer Science, IIT Bombay (2018-2022)"
-                    ]).map((edu, idx) => (
-                      <li key={idx}>{edu}</li>
-                    ))}
-                    {(selectedApplicantForReview.freelancerProfile?.certifications || [
-                      "Certified Fintech Security Practitioner (2024)"
-                    ]).map((cert, idx) => (
-                      <li key={idx} className="text-emerald-700 font-medium">
-                        Cert: {cert}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Uploaded CV & Document View */}
-              <div className="p-4 rounded-2xl bg-blue-50/40 border border-blue-100 space-y-3">
-                <div className="flex items-center justify-between">
+                    {selectedApplicantForReview.freelancerProfile?.cvFile?.size ? (
+                      <span className="text-slate-400 font-normal">
+                        ({Math.max(1, Math.round(selectedApplicantForReview.freelancerProfile.cvFile.size / 1024))} KB)
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="flex items-center gap-2">
-                    <FileCheck className="w-4 h-4 text-[#0070E0]" />
-                    <span className="text-xs font-bold text-[#003087]">Uploaded CV / Resume Document</span>
+                    {selectedApplicantForReview.freelancerProfile?.cvFile?.url && (
+                      <a
+                        href={selectedApplicantForReview.freelancerProfile.cvFile.url}
+                        download={selectedApplicantForReview.freelancerProfile.cvFile.name}
+                        className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                      >
+                        Download
+                      </a>
+                    )}
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                    CV Attached &amp; Validated
-                  </span>
                 </div>
 
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white p-3 rounded-xl border border-blue-100 text-xs">
-                  <div>
-                    <span className="font-bold text-gray-800 block">
-                      {selectedApplicantForReview.freelancerProfile?.cvFile?.name || "Vachan_Singh_Senior_FullStack_CV.pdf"}
-                    </span>
-                    <span className="text-[11px] text-gray-400">
-                      Uploaded {formatDate(selectedApplicantForReview.freelancerProfile?.cvFile?.uploadedAt || selectedApplicantForReview.createdAt)} • 148 KB
-                    </span>
+                {selectedApplicantForReview.freelancerProfile?.cvFile ? (
+                  (() => {
+                    const cv = selectedApplicantForReview.freelancerProfile!.cvFile!;
+                    const lowerName = (cv.name || "").toLowerCase();
+                    const rawText = (cv.extractedInfo as any)?.rawText as string | undefined;
+                    if (cv.url && (lowerName.endsWith(".pdf") || cv.url.startsWith("data:application/pdf"))) {
+                      const pdfSrc = cv.url.includes("#") ? cv.url : `${cv.url}#view=FitH&zoom=page-width`;
+                      return (
+                        <iframe
+                          src={pdfSrc}
+                          title={cv.name}
+                          className="w-full h-[46vh] min-h-[380px] bg-slate-800"
+                        />
+                      );
+                    }
+                    if (cv.url && /\.(png|jpe?g|webp|gif)$/i.test(lowerName)) {
+                      return (
+                        <div className="bg-slate-900 flex justify-center p-4">
+                          <img
+                            src={cv.url}
+                            alt={cv.name}
+                            className="max-h-[46vh] object-contain rounded-lg"
+                          />
+                        </div>
+                      );
+                    }
+                    if (rawText) {
+                      return (
+                        <pre className="w-full max-h-[46vh] overflow-y-auto whitespace-pre-wrap p-6 bg-white text-xs text-gray-800 font-sans leading-relaxed">
+                          {rawText}
+                        </pre>
+                      );
+                    }
+                    return (
+                      <div className="p-8 text-center text-xs text-gray-500">
+                        Inline preview unavailable for this file format. Use the Download button above to inspect.
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <div className="p-10 text-center text-xs text-gray-500">
+                    The applicant did not attach a CV file to this proposal.
                   </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-8 bg-blue-50 text-[#0070E0] border-blue-200 hover:bg-blue-100"
-                    onClick={() => setShowCVPreviewModal(true)}
-                  >
-                    <Eye className="w-3.5 h-3.5 mr-1" />
-                    View / Inspect CV
-                  </Button>
-                </div>
-
-                {/* CV Extracted Summary */}
-                {selectedApplicantForReview.freelancerProfile?.cvFile?.extractedInfo?.summary && (
-                  <p className="text-xs text-gray-600 bg-white p-3 rounded-xl border border-gray-100 leading-relaxed">
-                    <strong>CV Executive Summary:</strong> {selectedApplicantForReview.freelancerProfile.cvFile.extractedInfo.summary}
-                  </p>
                 )}
               </div>
 
-              {/* AI-Assisted Candidate Analysis (Demo Advisory) */}
-              <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-200 text-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 font-bold text-purple-900">
-                    <Sparkles className="w-4 h-4 text-purple-600" />
-                    <span>AI-Assisted Candidate Analysis</span>
+              {/* Bottom Two-Column Cards: Candidate Summary & Credentials vs AI-Assisted Analysis */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Left Card: Candidate Summary, Cover Letter, Skills & Education */}
+                <div className="p-5 rounded-2xl bg-white border border-gray-200 space-y-4 text-xs shadow-2xs">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
+                    <h4 className="font-extrabold text-sm text-[#003087]">Candidate Summary &amp; Proposal</h4>
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600">
+                      {selectedApplicantForReview.coverLetter.trim().split(/\s+/).filter(Boolean).length} Words
+                    </span>
                   </div>
-                  <Badge variant="inReview" size="sm">
-                    DEMO ADVISORY
-                  </Badge>
+
+                  <p className="text-gray-700 leading-relaxed bg-gray-50 p-3.5 rounded-xl border border-gray-100">
+                    {selectedApplicantForReview.coverLetter}
+                  </p>
+
+                  {selectedApplicantForReview.freelancerProfile?.skills?.length ? (
+                    <div>
+                      <span className="font-bold text-gray-700 block mb-1.5">Skills</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedApplicantForReview.freelancerProfile.skills.map((skill, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-[#003087] border border-blue-200"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {(selectedApplicantForReview.freelancerProfile?.education?.length ||
+                    selectedApplicantForReview.freelancerProfile?.experience?.length) ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      {selectedApplicantForReview.freelancerProfile?.education?.length ? (
+                        <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
+                          <span className="font-bold text-gray-800 block mb-1">Education &amp; Credentials</span>
+                          <ul className="list-disc list-inside text-gray-600 space-y-1">
+                            {selectedApplicantForReview.freelancerProfile.education.map((edu, idx) => (
+                              <li key={idx}>{edu}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {selectedApplicantForReview.freelancerProfile?.experience?.length ? (
+                        <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
+                          <span className="font-bold text-gray-800 block mb-1">Experience</span>
+                          <ul className="list-disc list-inside text-gray-600 space-y-1">
+                            {selectedApplicantForReview.freelancerProfile.experience.map((exp, idx) => (
+                              <li key={idx}>{exp}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-[11px]">
-                  <div className="bg-white p-2.5 rounded-xl border border-purple-100">
-                    <span className="font-bold text-emerald-700 block mb-1">Skills Matching Project:</span>
-                    <p className="text-gray-600">
-                      Next.js 14, TypeScript, Tailwind CSS, Escrow architecture, and responsive UI engineering match 98% of project requirements.
-                    </p>
+                {/* Right Card: AI-Assisted Candidate Analysis */}
+                <div className="p-5 rounded-2xl bg-white border border-purple-200 space-y-4 text-xs shadow-2xs">
+                  <div className="flex items-center justify-between border-b border-purple-100 pb-2.5">
+                    <div className="flex items-center gap-1.5 font-extrabold text-sm text-purple-900">
+                      <Sparkles className="w-4 h-4 text-purple-600" />
+                      <span>AI-Assisted Candidate Analysis</span>
+                    </div>
+                    {selectedApplicantForReview.aiRecommendation && (
+                      <div className="flex items-center gap-1.5">
+                        {selectedApplicantForReview.aiRecommendation.isTopPick && (
+                          <Badge variant="success" size="sm">AI Shortlisted</Badge>
+                        )}
+                        <Badge variant="inReview" size="sm">
+                          {selectedApplicantForReview.aiRecommendation.fitScore}% Fit Score
+                        </Badge>
+                      </div>
+                    )}
                   </div>
-                  <div className="bg-white p-2.5 rounded-xl border border-purple-100">
-                    <span className="font-bold text-amber-700 block mb-1">Identified Focus Areas:</span>
-                    <p className="text-gray-600">
-                      No critical skill gaps identified. Candidate exhibits top on-time delivery (98%) and clean code certifications.
-                    </p>
-                  </div>
+
+                  {selectedApplicantForReview.aiRecommendation ? (
+                    <div className="space-y-3">
+                      <p className="text-gray-700 leading-relaxed bg-purple-50/50 p-3.5 rounded-xl border border-purple-100">
+                        {selectedApplicantForReview.aiRecommendation.summaryExplanation}
+                      </p>
+
+                      {((selectedApplicantForReview.aiRecommendation as any).matchedSkills?.length > 0 ||
+                        (selectedApplicantForReview.aiRecommendation as any).missingSkills?.length > 0) && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {((selectedApplicantForReview.aiRecommendation as any).matchedSkills || []).map((sk: string) => (
+                            <span key={`m-${sk}`} className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              ✓ {sk}
+                            </span>
+                          ))}
+                          {((selectedApplicantForReview.aiRecommendation as any).missingSkills || []).map((sk: string) => (
+                            <span key={`x-${sk}`} className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                              Missing: {sk}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 italic">No AI analysis available for this application.</p>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Modal Footer Actions */}
-            <div className="p-6 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+            <div className="px-6 py-4 bg-white border-t border-gray-200 flex items-center justify-between shrink-0">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setSelectedApplicantForReview(null)}
               >
+                <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
                 Close Dossier
               </Button>
 
@@ -2784,12 +3854,12 @@ function ClientDashboardContent() {
       {/* ── MODAL: CV DOCUMENT VIEWER ── */}
       {showCVPreviewModal && selectedApplicantForReview && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden space-y-4 p-6 animate-slide-up">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden space-y-4 p-6 animate-slide-up max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3 shrink-0">
               <div className="flex items-center gap-2">
                 <FileCheck className="w-5 h-5 text-[#0070E0]" />
                 <h3 className="font-bold text-base text-gray-900">
-                  CV Document: {selectedApplicantForReview.freelancerProfile?.cvFile?.name || "Vachan_Singh_Senior_FullStack_CV.pdf"}
+                  CV Document: {selectedApplicantForReview.freelancerProfile?.cvFile?.name || "No CV Uploaded"}
                 </h3>
               </div>
               <button
@@ -2800,42 +3870,105 @@ function ClientDashboardContent() {
               </button>
             </div>
 
-            <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 space-y-4 text-xs font-mono">
-              <div className="border-b border-gray-200 pb-3">
-                <h2 className="text-base font-bold text-gray-900 font-sans">
-                  {selectedApplicantForReview.freelancerName}
-                </h2>
-                <p className="text-gray-500 font-sans">
-                  {selectedApplicantForReview.freelancerDomain} • 6 Years Professional Experience
-                </p>
-              </div>
+            <div className="overflow-y-auto space-y-4 flex-1">
+              {(() => {
+                const cv = selectedApplicantForReview.freelancerProfile?.cvFile;
+                if (!cv) return null;
+                const lowerName = (cv.name || "").toLowerCase();
+                const rawText = (cv.extractedInfo as any)?.rawText as string | undefined;
+                if (cv.url && (lowerName.endsWith(".pdf") || cv.url.startsWith("data:application/pdf"))) {
+                  return (
+                    <iframe
+                      src={cv.url}
+                      title={cv.name}
+                      className="w-full h-[60vh] rounded-2xl border border-gray-200 bg-gray-50"
+                    />
+                  );
+                }
+                if (cv.url && /\.(png|jpe?g|webp|gif)$/i.test(lowerName)) {
+                  return (
+                    <img
+                      src={cv.url}
+                      alt={cv.name}
+                      className="w-full max-h-[60vh] object-contain rounded-2xl border border-gray-200 bg-gray-50"
+                    />
+                  );
+                }
+                if (rawText) {
+                  return (
+                    <pre className="w-full max-h-[60vh] overflow-y-auto whitespace-pre-wrap p-5 rounded-2xl border border-gray-200 bg-gray-50 text-xs text-gray-800 font-sans leading-relaxed">
+                      {rawText}
+                    </pre>
+                  );
+                }
+                return null;
+              })()}
 
-              <div>
-                <span className="font-bold text-[#003087] block mb-1">CORE TECHNICAL COMPETENCIES:</span>
-                <p className="text-gray-700">
-                  Next.js, React, TypeScript, Tailwind CSS, FastAPI, Python, PostgreSQL, Smart Contracts, Autonomous Escrow Architecture
-                </p>
-              </div>
+              <div className="p-5 bg-gray-50 rounded-2xl border border-gray-100 space-y-3 text-xs">
+                <div className="border-b border-gray-200 pb-3">
+                  <h2 className="text-base font-bold text-gray-900">
+                    {selectedApplicantForReview.freelancerName}
+                  </h2>
+                  <p className="text-gray-500">
+                    {selectedApplicantForReview.freelancerDomain}
+                    {selectedApplicantForReview.freelancerProfile?.experienceYears
+                      ? ` • ${selectedApplicantForReview.freelancerProfile.experienceYears} Years Experience`
+                      : ""}
+                  </p>
+                </div>
 
-              <div>
-                <span className="font-bold text-[#003087] block mb-1">CAREER MILESTONES:</span>
-                <p className="text-gray-700">
-                  • Lead Frontend Engineer (Web3 FinTech) - Multi-party milestone escrow contracts &amp; responsive fintech dashboards<br />
-                  • Senior Software Developer (CloudScale) - Micro-frontends &amp; high-assurance API integration
-                </p>
-              </div>
+                {selectedApplicantForReview.freelancerProfile?.cvFile?.extractedInfo?.summary && (
+                  <div>
+                    <span className="font-bold text-[#003087] block mb-1">CANDIDATE SUMMARY</span>
+                    <p className="text-gray-700">
+                      {selectedApplicantForReview.freelancerProfile.cvFile.extractedInfo.summary}
+                    </p>
+                  </div>
+                )}
 
-              <div>
-                <span className="font-bold text-[#003087] block mb-1">EDUCATION &amp; CERTIFICATIONS:</span>
-                <p className="text-gray-700">
-                  • Bachelor of Technology in Computer Science - IIT Bombay (CGPA 8.9/10)<br />
-                  • Certified Fintech Security Practitioner (FSI-2024)<br />
-                  • AWS Certified Solutions Architect - Associate
-                </p>
+                {selectedApplicantForReview.freelancerProfile?.skills?.length ? (
+                  <div>
+                    <span className="font-bold text-[#003087] block mb-1">SKILLS</span>
+                    <p className="text-gray-700">
+                      {selectedApplicantForReview.freelancerProfile.skills.join(", ")}
+                    </p>
+                  </div>
+                ) : null}
+
+                {selectedApplicantForReview.freelancerProfile?.experience?.length ? (
+                  <div>
+                    <span className="font-bold text-[#003087] block mb-1">EXPERIENCE</span>
+                    <ul className="text-gray-700 list-disc list-inside space-y-1">
+                      {selectedApplicantForReview.freelancerProfile.experience.map((exp, idx) => (
+                        <li key={idx}>{exp}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {selectedApplicantForReview.freelancerProfile?.education?.length ? (
+                  <div>
+                    <span className="font-bold text-[#003087] block mb-1">EDUCATION</span>
+                    <ul className="text-gray-700 list-disc list-inside space-y-1">
+                      {selectedApplicantForReview.freelancerProfile.education.map((edu, idx) => (
+                        <li key={idx}>{edu}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 shrink-0">
+              {selectedApplicantForReview.freelancerProfile?.cvFile?.url && (
+                <a
+                  href={selectedApplicantForReview.freelancerProfile.cvFile.url}
+                  download={selectedApplicantForReview.freelancerProfile.cvFile.name}
+                  className="inline-flex items-center px-4 py-2 rounded-xl text-xs font-bold bg-[#0070E0] text-white hover:bg-[#005bb5]"
+                >
+                  Download CV
+                </a>
+              )}
               <Button variant="outline" size="sm" onClick={() => setShowCVPreviewModal(false)}>
                 Close Preview
               </Button>
@@ -2862,6 +3995,11 @@ function ClientDashboardContent() {
             </div>
 
             <form onSubmit={handleConfirmRevision} className="p-6 space-y-4">
+              {revisionErrorMsg && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                  {revisionErrorMsg}
+                </div>
+              )}
               <Textarea
                 label="Punch-list & Feedback Notes"
                 required
@@ -2880,8 +4018,341 @@ function ClientDashboardContent() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" variant="primary" size="sm">
-                  Send Revision Request
+                <Button type="submit" variant="primary" size="sm" disabled={isSubmittingRevision}>
+                  {isSubmittingRevision ? "Sending..." : "Send Revision Request"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── PayPal Immediate Escrow Checkout Modal (Triggered on Candidate Accept) ── */}
+      {pendingEscrowCheckout && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden p-6 space-y-5 animate-slide-up">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-blue-50 text-[#0070E0] flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-[#003087]">Lock Escrow via PayPal</h3>
+                  <p className="text-xs text-gray-500">Contract #{pendingEscrowCheckout.contractId} Created</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPendingEscrowCheckout(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Project:</span>
+                <strong className="text-gray-900 text-right">{pendingEscrowCheckout.projectTitle}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Assigned Talent:</span>
+                <strong className="text-gray-900">{pendingEscrowCheckout.talentName}</strong>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-blue-100">
+                <span className="text-gray-600 font-semibold">Escrow Amount to Hold:</span>
+                <strong className="text-base font-extrabold text-[#003087]">
+                  {formatCurrency(pendingEscrowCheckout.amount, pendingEscrowCheckout.currency)}
+                </strong>
+              </div>
+              <div className="text-[11px] font-mono text-gray-500 pt-1">
+                PayPal Order ID: {pendingEscrowCheckout.orderId}
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Your funds will be authorized and debited into PayPal Escrow so{" "}
+              <strong>{pendingEscrowCheckout.talentName}</strong> can begin Milestone Step 1.
+            </p>
+
+            {/* Step 1: Owner Password & Payer Verification Gate */}
+            {!escrowSecurityVerified ? (
+              <form onSubmit={handleVerifyEscrowPassword} className="space-y-3 p-4 rounded-2xl bg-gray-50 border border-gray-200">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#003087]">
+                  <Lock className="w-4 h-4 text-[#0070E0]" />
+                  <span>Security Check: Verify Owner Credentials Before PayPal Checkout</span>
+                </div>
+                {escrowSecurityError && (
+                  <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 p-2.5 rounded-xl">
+                    {escrowSecurityError}
+                  </p>
+                )}
+                <Input
+                  label="Payer PayPal Buyer Email (Optional confirmation)"
+                  type="email"
+                  placeholder="e.g. sb-buyer@personal.example.com"
+                  value={payerPaypalEmail}
+                  onChange={(e) => setPayerPaypalEmail(e.target.value)}
+                />
+                <Input
+                  label="Your TrustPay Account Password"
+                  type="password"
+                  required
+                  placeholder="Enter your password to unlock PayPal checkout"
+                  value={escrowSecurityPassword}
+                  onChange={(e) => setEscrowSecurityPassword(e.target.value)}
+                />
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="md"
+                  disabled={isVerifyingEscrowPass}
+                  className="w-full"
+                >
+                  <ShieldCheck className="w-4 h-4 mr-1.5" />
+                  {isVerifyingEscrowPass ? "Verifying Owner..." : "Verify Owner & Unlock PayPal Payment"}
+                </Button>
+              </form>
+            ) : (
+            <div className="flex flex-col gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Owner verified! Complete your PayPal Buyer login or use Simulated PayPal Escrow below.</span>
+              </div>
+
+              {paypalErrorMsg && (
+                <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 p-2.5 rounded-xl">
+                  {paypalErrorMsg}
+                </p>
+              )}
+
+              {pendingEscrowCheckout.mode !== "mock" ? (
+                <>
+                  <PayPalSmartButtons
+                    contractId={pendingEscrowCheckout.contractId}
+                    currency={pendingEscrowCheckout.currency}
+                    onAuthorized={handleSmartButtonsAuthorized}
+                    onError={handleSmartButtonsError}
+                  />
+                  {pendingEscrowCheckout.approvalUrl && (
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="md"
+                      onClick={() => {
+                        window.location.href = pendingEscrowCheckout.approvalUrl!;
+                      }}
+                      className="w-full bg-[#0070E0] hover:bg-[#003087] text-white font-bold"
+                    >
+                      Pay with PayPal Sandbox Checkout →
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="md"
+                  disabled={isFundingEscrow}
+                  onClick={async () => {
+                    setIsFundingEscrow(true);
+                    setPaypalErrorMsg("");
+                    try {
+                      await authorizePayPalEscrow(pendingEscrowCheckout.contractId, pendingEscrowCheckout.orderId, true);
+                      setPendingEscrowCheckout(null);
+                      setActionSuccessMsg("PayPal Escrow Authorized! Funds locked and Step 1 is now ACTIVE.");
+                    } catch (err: any) {
+                      setPaypalErrorMsg(err?.message || "Failed to lock escrow.");
+                    } finally {
+                      setIsFundingEscrow(false);
+                    }
+                  }}
+                  className="w-full bg-[#003087] hover:bg-[#001f5c] text-white font-bold"
+                >
+                  <Lock className="w-4 h-4 mr-1.5" />
+                  {isFundingEscrow
+                    ? "Authorizing Escrow..."
+                    : `Authorize & Lock ${formatCurrency(pendingEscrowCheckout.amount, pendingEscrowCheckout.currency)}`}
+                </Button>
+              )}
+            </div>
+            )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPendingEscrowCheckout(null)}
+              className="w-full text-xs text-gray-500"
+            >
+              I&apos;ll Fund Later from Active Contracts
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: EARLY CONTRACT SETTLEMENT ── */}
+      {earlySettleModalOpen && selectedContractForTab && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden p-6 space-y-4 animate-slide-up">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">End Project Early with Settlement</h3>
+                <p className="text-xs text-gray-500">
+                  Remaining Held Escrow: {formatCurrency(selectedContractForTab.heldInEscrowAmount, selectedContractForTab.currency)}
+                </p>
+              </div>
+              <button onClick={() => setEarlySettleModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {earlyError && (
+              <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 p-2.5 rounded-xl">{earlyError}</p>
+            )}
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const held = selectedContractForTab.heldInEscrowAmount || 0;
+                const talentAmt = Math.max(0, Number(earlyTalentShare) || 0);
+                if (talentAmt > held) {
+                  setEarlyError(`Freelancer share cannot exceed ${formatCurrency(held, selectedContractForTab.currency)}.`);
+                  return;
+                }
+                const refundAmt = Math.max(0, Number((held - talentAmt).toFixed(2)));
+                setIsSettlingEarly(true);
+                setEarlyError("");
+                try {
+                  await settleContractEarly(
+                    selectedContractForTab.id,
+                    talentAmt,
+                    refundAmt,
+                    earlyReason.trim() || "Early contract termination with mutual settlement"
+                  );
+                  setEarlySettleModalOpen(false);
+                  setActionSuccessMsg(
+                    `Contract #${selectedContractForTab.id} settled early (${formatCurrency(talentAmt, selectedContractForTab.currency)} to talent, ${formatCurrency(refundAmt, selectedContractForTab.currency)} refunded).`
+                  );
+                } catch (err: any) {
+                  setEarlyError(err?.message || "Failed to settle contract early.");
+                } finally {
+                  setIsSettlingEarly(false);
+                }
+              }}
+              className="space-y-3"
+            >
+              <Input
+                label={`Freelancer Payout Share (${selectedContractForTab.currency})`}
+                type="number"
+                min="0"
+                max={selectedContractForTab.heldInEscrowAmount || 0}
+                step="0.01"
+                value={earlyTalentShare}
+                onChange={(e) => setEarlyTalentShare(e.target.value)}
+              />
+              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-700 flex justify-between">
+                <span>Client Refund Amount:</span>
+                <strong>
+                  {formatCurrency(
+                    Math.max(0, (selectedContractForTab.heldInEscrowAmount || 0) - (Number(earlyTalentShare) || 0)),
+                    selectedContractForTab.currency
+                  )}
+                </strong>
+              </div>
+              <Textarea
+                label="Settlement Reason"
+                required
+                rows={2}
+                placeholder="Explain why the project is ending early..."
+                value={earlyReason}
+                onChange={(e) => setEarlyReason(e.target.value)}
+              />
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setEarlySettleModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" size="sm" isLoading={isSettlingEarly}>
+                  Confirm Early Settlement
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Password-Authenticated Upfront / Override Transfer Modal ── */}
+      {overrideAuthModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden p-6 space-y-4 animate-slide-up">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-gray-900">
+                    {overrideAuthModal.type === "MILESTONE"
+                      ? "Password-Protected Upfront Override"
+                      : "Full Upfront Escrow Release"}
+                  </h3>
+                  <p className="text-xs text-gray-500">Owner verification required to transfer funds</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setOverrideAuthModal(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 text-xs space-y-1.5">
+              <p className="text-amber-900">
+                You are overriding standard verification gates to immediately transfer{" "}
+                <strong>{formatCurrency(overrideAuthModal.amount, overrideAuthModal.currency)}</strong> to{" "}
+                <strong>{overrideAuthModal.talentName}</strong> ({overrideAuthModal.title}).
+              </p>
+            </div>
+
+            {overrideError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                {overrideError}
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmOverrideSubmit} className="space-y-3">
+              <Input
+                label="Confirm Account Password"
+                type="password"
+                required
+                placeholder="Enter your TrustPay account password"
+                value={overridePassword}
+                onChange={(e) => setOverridePassword(e.target.value)}
+              />
+              <Input
+                label="Override Reason (Optional audit note)"
+                placeholder="e.g. Approved early milestone release"
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+              />
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setOverrideAuthModal(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  disabled={isExecutingOverride}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  <Lock className="w-3.5 h-3.5 mr-1.5" />
+                  {isExecutingOverride
+                    ? "Verifying & Transferring..."
+                    : `Confirm & Transfer ${formatCurrency(overrideAuthModal.amount, overrideAuthModal.currency)}`}
                 </Button>
               </div>
             </form>
@@ -2894,8 +4365,10 @@ function ClientDashboardContent() {
 
 export default function ClientDashboardPage() {
   return (
-    <Suspense fallback={<div className="p-12 text-center text-xs text-gray-400">Loading Client Dashboard...</div>}>
-      <ClientDashboardContent />
-    </Suspense>
+    <RequireAuth requiredRole="CLIENT">
+      <Suspense fallback={<div className="p-12 text-center text-xs text-gray-400">Loading Client Dashboard...</div>}>
+        <ClientDashboardContent />
+      </Suspense>
+    </RequireAuth>
   );
 }

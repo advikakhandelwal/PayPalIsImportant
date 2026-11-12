@@ -169,20 +169,55 @@ class ContractResponse(BaseMarketplaceSchema):
     id: str
     project_id: str = Field(..., serialization_alias="projectId")
     project_title: str = Field(..., serialization_alias="projectTitle")
+    project_description: Optional[str] = Field(None, serialization_alias="projectDescription")
+    project_domain: Optional[str] = Field(None, serialization_alias="projectDomain")
+    project_deadline: Optional[str] = Field(None, serialization_alias="projectDeadline")
+    required_skills: List[str] = Field(default_factory=list, serialization_alias="requiredSkills")
     client_id: str = Field(..., serialization_alias="clientId")
     client_name: str = Field(..., serialization_alias="clientName")
+    client_email: Optional[str] = Field(None, serialization_alias="clientEmail")
     freelancer_id: str = Field(..., serialization_alias="freelancerId")
     freelancer_name: str = Field(..., serialization_alias="freelancerName")
+    freelancer_email: Optional[str] = Field(None, serialization_alias="freelancerEmail")
+    freelancer_payout_email: Optional[str] = Field(None, serialization_alias="freelancerPayoutEmail")
+    freelancer_domain: Optional[str] = Field(None, serialization_alias="freelancerDomain")
+    freelancer_rating: Optional[float] = Field(None, serialization_alias="freelancerRating")
+    freelancer_badges: List[str] = Field(default_factory=list, serialization_alias="freelancerBadges")
     total_budget: float = Field(..., serialization_alias="totalBudget")
     held_in_escrow_amount: float = Field(..., serialization_alias="heldInEscrowAmount")
     released_amount: float = Field(..., serialization_alias="releasedAmount")
     currency: str
     escrow_status: EscrowStatus = Field(..., serialization_alias="escrowStatus")
+    paypal_auth_id: Optional[str] = Field(None, serialization_alias="paypalAuthId")
+    paypal_capture_id: Optional[str] = Field(None, serialization_alias="paypalCaptureId")
     created_at: str = Field(..., serialization_alias="createdAt")
     milestones: List[ContractMilestoneResponse] = Field(default_factory=list)
     client_rating: Optional[float] = Field(None, serialization_alias="clientRating")
     client_review: Optional[str] = Field(None, serialization_alias="clientReview")
     reviewed_at: Optional[str] = Field(None, serialization_alias="reviewedAt")
+
+
+class ContractMessageCreate(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+class ContractMessageResponse(BaseMarketplaceSchema):
+    id: str
+    contract_id: str = Field(..., serialization_alias="contractId")
+    sender_id: str = Field(..., serialization_alias="senderId")
+    sender_name: str = Field(..., serialization_alias="senderName")
+    sender_role: str = Field(..., serialization_alias="senderRole")
+    message: str
+    created_at: str = Field(..., serialization_alias="createdAt")
+
+
+class OverrideReleaseRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    password: str = Field(..., min_length=1, description="Owner account password required to authorize override payment")
+    reason: Optional[str] = Field(None, max_length=500)
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +262,7 @@ class ApplicationCreateRequest(BaseModel):
     freelancer_id: Optional[str] = Field(None, alias="freelancerId")
     freelancer_name: Optional[str] = Field(None, alias="freelancerName")
     freelancer_domain: Optional[str] = Field(None, alias="freelancerDomain")
+    freelancer_profile: Optional[Dict[str, Any]] = Field(None, alias="freelancerProfile")
 
 
 class ApplicationResponse(BaseMarketplaceSchema):
@@ -243,4 +279,21 @@ class ApplicationResponse(BaseMarketplaceSchema):
     created_at: str = Field(..., serialization_alias="createdAt")
     trust_scorecard: TrustScorecardData = Field(..., serialization_alias="trustScorecard")
     ai_recommendation: Optional[Dict[str, Any]] = Field(None, serialization_alias="aiRecommendation")
+    freelancer_profile: Optional[Dict[str, Any]] = Field(None, serialization_alias="freelancerProfile")
+
+
+class MessageThreadSummary(BaseMarketplaceSchema):
+    """Unified inbox summary per contract conversation."""
+    contract_id: str = Field(..., serialization_alias="contractId")
+    project_title: str = Field(..., serialization_alias="projectTitle")
+    counterparty_name: str = Field(..., serialization_alias="counterpartyName")
+    counterparty_role: str = Field(..., serialization_alias="counterpartyRole")
+    counterparty_email: Optional[str] = Field(None, serialization_alias="counterpartyEmail")
+    escrow_status: EscrowStatus = Field(..., serialization_alias="escrowStatus")
+    total_budget: float = Field(..., serialization_alias="totalBudget")
+    currency: str
+    message_count: int = Field(0, serialization_alias="messageCount")
+    last_message: Optional[str] = Field(None, serialization_alias="lastMessage")
+    last_message_sender: Optional[str] = Field(None, serialization_alias="lastMessageSender")
+    last_message_at: Optional[str] = Field(None, serialization_alias="lastMessageAt")
 

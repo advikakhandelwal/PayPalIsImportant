@@ -64,16 +64,36 @@ function normalizeUserProfile(raw: any): UserProfile {
     badges: rawScorecard?.badges || raw.badges || [],
   };
 
+  let storedCv = raw.cvFile || raw.cv_file || undefined;
+  if (!storedCv && typeof window !== "undefined" && raw.id) {
+    try {
+      const saved = window.localStorage.getItem(`tp_cv_${raw.id}`);
+      if (saved) storedCv = JSON.parse(saved);
+    } catch {
+      // ignore storage error
+    }
+  }
+
   return {
     id: String(raw.id || ""),
     name: raw.name || "",
     email: raw.email || "",
+    paypalPayoutEmail: raw.paypalPayoutEmail || raw.paypal_payout_email || "",
     role: (raw.role === "CLIENT" ? "CLIENT" : "FREELANCER") as UserRole,
     domain: raw.domain || "General",
     bio: raw.bio || "",
     companyName: raw.companyName || raw.company_name || "",
+    companyDescription: raw.companyDescription || raw.company_description || raw.bio || "",
+    city: raw.city || "",
+    state: raw.state || "",
+    country: raw.country || "",
+    address: raw.address || "",
+    postalCode: raw.postalCode || raw.postal_code || "",
     portfolioLinks: raw.portfolioLinks || raw.portfolio_links || [],
     skills: raw.skills || [],
+    experienceYears: raw.experienceYears ?? raw.experience_years ?? undefined,
+    education: raw.education || [],
+    cvFile: storedCv,
     createdAt: raw.createdAt || raw.created_at || new Date().toISOString(),
     trustScorecard: scorecard,
   };
@@ -121,12 +141,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setActiveRoleState(normalized.role);
           setIsAuthenticated(true);
         }
-      } catch (err) {
-        // Token expired or invalid: clear and reset
-        clearStoredToken();
-        if (isMounted) {
-          setCurrentUser(EMPTY_USER);
-          setIsAuthenticated(false);
+      } catch (err: any) {
+        // Only clear stored token when backend explicitly rejects it (401/403)
+        if (err?.status === 401 || err?.status === 403) {
+          clearStoredToken();
+          if (isMounted) {
+            setCurrentUser(EMPTY_USER);
+            setIsAuthenticated(false);
+          }
         }
       } finally {
         if (isMounted) {
@@ -210,10 +232,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Update Profile Details via backend API
    */
   const updateProfile = async (profileData: Partial<UserProfile>): Promise<void> => {
+    if (profileData.cvFile && typeof window !== "undefined" && currentUser.id) {
+      try {
+        window.localStorage.setItem(`tp_cv_${currentUser.id}`, JSON.stringify(profileData.cvFile));
+      } catch {
+        // ignore storage quota error
+      }
+    }
     try {
       const updated = await apiClient.updateProfile(profileData);
       const normalized = normalizeUserProfile(updated);
-      setCurrentUser(normalized);
+      setCurrentUser((prev) => ({
+        ...normalized,
+        cvFile: profileData.cvFile || normalized.cvFile || prev.cvFile,
+      }));
     } catch {
       // Optimistic local update as fallback
       setCurrentUser((prev) => ({

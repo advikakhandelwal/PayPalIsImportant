@@ -1,70 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { AppNotification, NotificationEvent, UserRole } from "@/types";
-
-const LS_NOTIFICATIONS = "tp_demo_notifications";
-
-const SEED_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: "notif-seed-1",
-    userId: "client-fintech-corp",
-    userRole: "CLIENT",
-    event: "DELIVERABLE_SUBMITTED",
-    title: "Deliverable Ready for Review",
-    description: "Vachan submitted deliverable for Step 2: Smart Contract Core & Verification Engine.",
-    linkHref: "/client/dashboard?tab=contracts",
-    isRead: false,
-    isDismissed: false,
-    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    entityId: "contract-escrow-001",
-  },
-  {
-    id: "notif-seed-2",
-    userId: "freelancer-vachan",
-    userRole: "FREELANCER",
-    event: "MILESTONE_APPROVED",
-    title: "Escrow Milestone Released ($1,200.00)",
-    description: "FinTech Global approved Step 1: Architecture & API Specs. Funds released to your balance.",
-    linkHref: "/freelancer/dashboard?tab=contracts",
-    isRead: true,
-    isDismissed: false,
-    createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-    entityId: "contract-escrow-001",
-  },
-  {
-    id: "notif-seed-3",
-    userId: "client-fintech-corp",
-    userRole: "CLIENT",
-    event: "NEW_APPLICATION",
-    title: "New Application Received",
-    description: "Alex Rivera submitted a proposal for AI Agent Pipeline Architecture ($3,200.00).",
-    linkHref: "/client/dashboard?tab=proposals",
-    isRead: true,
-    isDismissed: false,
-    createdAt: new Date(Date.now() - 3600000 * 48).toISOString(),
-    entityId: "proj-1",
-  },
-];
-
-function readLS<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeLS<T>(key: string, value: T): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // quota exceeded fallback
-  }
-}
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
+import { AppNotification, UserRole } from "@/types";
+import { useAuth } from "@/context/AuthContext";
+import { apiClient } from "@/services/api";
 
 interface NotificationContextType {
   notifications: AppNotification[];
@@ -83,73 +22,125 @@ interface NotificationContextType {
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [notifications, setNotifications] = useState<AppNotification[]>(SEED_NOTIFICATIONS);
+  const { currentUser, isAuthenticated } = useAuth();
+  const [allNotifications, setAllNotifications] = useState<AppNotification[]>([]);
   const [isHydrated, setIsHydrated] = useState<boolean>(false);
 
-  useEffect(() => {
+  const fetchNotifications = useCallback(async () => {
+    if (!isAuthenticated || !currentUser.id) {
+      setAllNotifications([]);
+      setIsHydrated(true);
+      return;
+    }
     try {
-      const saved = readLS<AppNotification[] | null>(LS_NOTIFICATIONS, null);
-      if (saved && Array.isArray(saved) && saved.length > 0) {
-        setNotifications(saved);
+      const rows = await apiClient.getNotifications();
+      if (Array.isArray(rows)) {
+        setAllNotifications(rows);
       }
     } catch {
-      // Safe fallback
+      // keep existing state on transient error
     } finally {
       setIsHydrated(true);
     }
-  }, []);
+  }, [isAuthenticated, currentUser.id]);
 
   useEffect(() => {
-    if (isHydrated) {
-      writeLS(LS_NOTIFICATIONS, notifications);
-    }
-  }, [notifications, isHydrated]);
+    fetchNotifications();
+    if (!isAuthenticated || !currentUser.id) return;
+
+    const timer = setInterval(fetchNotifications, 5000);
+    const onFocus = () => fetchNotifications();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [fetchNotifications, isAuthenticated, currentUser.id]);
 
   const addNotification = useCallback(
     (data: Omit<AppNotification, "id" | "createdAt" | "isRead" | "isDismissed">) => {
-      const newNotif: AppNotification = {
-        ...data,
-        id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        createdAt: new Date().toISOString(),
-        isRead: false,
-        isDismissed: false,
-      };
-      setNotifications((prev) => [newNotif, ...prev]);
+      if (!data.userId || data.userId === "ALL") return;
+
+      // Optimistic local update if targeting current user
+      if (data.userId === currentUser.id) {
+        setAllNotifications((prev) => {
+          if (data.entityId && prev.some((n) => n.entityId === data.entityId && n.userId === data.userId)) {
+            return prev;
+          }
+          const newNotif: AppNotification = {
+            ...data,
+            id: `temp-${Date.now()}`,
+            createdAt: new Date().toISOString(),
+            isRead: false,
+            isDismissed: false,
+          };
+          return [newNotif, ...prev];
+        });
+      }
+
+      // Persist to backend SQLite so counterparty on another browser/device receives it
+      apiClient
+        .createNotification({
+          userId: data.userId,
+          userRole: data.userRole,
+          event: data.event,
+          title: data.title,
+          description: data.description,
+          linkHref: data.linkHref || "/",
+          entityId: data.entityId,
+        })
+        .then((created) => {
+          if (created && created.userId === currentUser.id) {
+            fetchNotifications();
+          }
+        })
+        .catch(() => {
+          // non-blocking
+        });
     },
-    []
+    [currentUser.id, fetchNotifications]
   );
 
   const markAsRead = useCallback((id: string) => {
-    setNotifications((prev) =>
+    setAllNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
     );
+    if (!id.startsWith("temp-")) {
+      apiClient.markNotificationRead(id).catch(() => {});
+    }
   }, []);
 
   const markAllAsRead = useCallback(() => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setAllNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    apiClient.markAllNotificationsRead().catch(() => {});
   }, []);
 
   const dismissNotification = useCallback((id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isDismissed: true } : n))
-    );
+    setAllNotifications((prev) => prev.filter((n) => n.id !== id));
+    if (!id.startsWith("temp-")) {
+      apiClient.dismissNotification(id).catch(() => {});
+    }
   }, []);
 
   const clearDismissed = useCallback(() => {
-    setNotifications((prev) => prev.filter((n) => !n.isDismissed));
+    setAllNotifications((prev) => prev.filter((n) => !n.isDismissed));
   }, []);
 
   const getNotificationsForUser = useCallback(
     (userId: string, role: UserRole) => {
-      return notifications.filter((n) => {
+      if (!userId) return [];
+      return allNotifications.filter((n) => {
         if (n.isDismissed) return false;
-        const matchesUser = n.userId === "ALL" || n.userId === userId;
-        const matchesRole = n.userRole === "ALL" || n.userRole === role;
-        return matchesUser || matchesRole;
+        return n.userId === userId && (n.userRole === "ALL" || n.userRole === role);
       });
     },
-    [notifications]
+    [allNotifications]
   );
+
+  const notifications = useMemo(() => {
+    if (!isAuthenticated || !currentUser.id) return [];
+    return getNotificationsForUser(currentUser.id, currentUser.role);
+  }, [isAuthenticated, currentUser.id, currentUser.role, getNotificationsForUser]);
 
   const unreadCount = notifications.filter((n) => !n.isRead && !n.isDismissed).length;
 

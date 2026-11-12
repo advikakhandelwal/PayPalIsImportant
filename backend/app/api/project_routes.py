@@ -22,7 +22,7 @@ from app.schemas.marketplace_schemas import (
     MilestoneBlueprintResponse,
 )
 from app.utils.id_converter import resolve_entity_id
-from app.utils.auth import require_client
+from app.utils.auth import require_client, get_optional_current_user
 
 router = APIRouter(prefix="/api/projects", tags=["Marketplace Projects"])
 
@@ -47,7 +47,7 @@ def _format_project_response(p: Project) -> ProjectResponse:
                 payment_amount=amt,
                 currency=p.currency,
                 deadline=str(bm.get("deadline")) if bm.get("deadline") else None,
-                status="ACTIVE" if step_num == 1 else "LOCKED",
+                status="LOCKED" if p.status == ProjectStatus.OPEN else ("ACTIVE" if step_num == 1 else "LOCKED"),
             )
         )
 
@@ -76,12 +76,21 @@ def _format_project_response(p: Project) -> ProjectResponse:
 
 
 @router.get("", response_model=List[ProjectResponse])
-def get_projects(db: Session = Depends(get_db)):
+def get_projects(
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
     """
-    Fetch all marketplace project listings.
-    Returns project scope, required skills, and proposed milestone blueprints.
+    Fetch project listings with role-based isolation:
+    - Authenticated CLIENT: sees ONLY their own posted projects (never other clients' projects).
+    - Authenticated FREELANCER or marketplace browse: sees ONLY OPEN projects.
     """
-    projects = db.query(Project).order_by(Project.created_at.desc()).all()
+    query = db.query(Project)
+    if current_user and current_user.role == UserRole.CLIENT:
+        query = query.filter(Project.client_id == current_user.id)
+    else:
+        query = query.filter(Project.status == ProjectStatus.OPEN)
+    projects = query.order_by(Project.created_at.desc()).all()
     return [_format_project_response(p) for p in projects]
 
 
@@ -174,4 +183,38 @@ def create_project(
     db.refresh(new_project)
 
     return _format_project_response(new_project)
+
+
+@router.delete("/{projectId}", status_code=status.HTTP_200_OK)
+def withdraw_project(
+    projectId: str,
+    current_user: User = Depends(require_client),
+    db: Session = Depends(get_db),
+):
+    """Client withdraws/cancels their own OPEN project before a contract is created."""
+    from app.models.application import Application
+    from app.models.contract import Contract
+
+    project_db_id = resolve_entity_id(projectId, "projects")
+    project = db.query(Project).filter(Project.id == project_db_id).first()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if project.client_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the project owner can withdraw this project.")
+    if project.status != ProjectStatus.OPEN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only OPEN projects without an active contract can be withdrawn. Use Early Settlement on the contract instead.",
+        )
+    existing_contract = db.query(Contract).filter(Contract.project_id == project.id).first()
+    if existing_contract:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This project already has a contract. Use Early Settlement on the contract instead.",
+        )
+
+    db.query(Application).filter(Application.project_id == project.id).delete()
+    db.delete(project)
+    db.commit()
+    return {"withdrawn": True, "projectId": str(project_db_id)}
 

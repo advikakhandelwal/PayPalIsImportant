@@ -39,6 +39,9 @@ class Application(Base):
     # Advika's AI Talent Matchmaker Advisory Recommendation
     ai_recommendation = Column(JSON, nullable=True)  # fitScore, domainMatchRate, summaryExplanation
 
+    # Freelancer-submitted profile & CV snapshot (skills, experience, education, cvFile)
+    freelancer_profile = Column(JSON, nullable=True)
+
     # Timestamp
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

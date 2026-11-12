@@ -14,6 +14,7 @@ Security Standards:
 import logging
 from typing import Optional
 from datetime import datetime
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -25,9 +26,19 @@ from app.schemas.auth_schemas import (
     UserProfileUpdateRequest,
     UserAuthResponse,
     TokenResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ResetPasswordRequest,
 )
 from app.schemas.marketplace_schemas import TrustScorecardData
-from app.core.security import hash_password, verify_password, create_access_token
+from app.core.security import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    create_password_reset_token,
+    decode_password_reset_token,
+    is_production_environment,
+)
 from app.utils.auth import get_current_user
 from app.services.reputation_service import calculate_user_reputation
 
@@ -71,6 +82,15 @@ def _format_user_auth_response(user: User, db: Optional[Session] = None) -> User
         domain=user.domain,
         bio=user.bio,
         company_name=user.company_name,
+        paypal_payout_email=getattr(user, "paypal_payout_email", None),
+        city=getattr(user, "city", None),
+        state=getattr(user, "state", None),
+        country=getattr(user, "country", None),
+        address=getattr(user, "address", None),
+        postal_code=getattr(user, "postal_code", None),
+        skills=getattr(user, "skills", None) or [],
+        experience_years=getattr(user, "experience_years", None),
+        education=getattr(user, "education", None) or [],
         created_at=user.created_at.isoformat() if user.created_at else datetime.utcnow().isoformat(),
         trust_scorecard=scorecard,
     )
@@ -107,7 +127,7 @@ def register_user(payload: UserRegisterRequest, db: Session = Depends(get_db)):
         domain=payload.domain or "General",
         bio=payload.bio,
         company_name=payload.company_name,
-        rating=5.0,
+        rating=0.0,
         on_time_rate=100,
         compliance_score=100,
         completed_projects=0,
@@ -212,7 +232,112 @@ def update_profile(
         current_user.bio = payload.bio.strip()
     if payload.company_name is not None:
         current_user.company_name = payload.company_name.strip()
+    if payload.paypal_payout_email is not None:
+        current_user.paypal_payout_email = payload.paypal_payout_email.strip().lower() or None
+    if payload.city is not None:
+        current_user.city = payload.city.strip() or None
+    if payload.state is not None:
+        current_user.state = payload.state.strip() or None
+    if payload.country is not None:
+        current_user.country = payload.country.strip() or None
+    if payload.address is not None:
+        current_user.address = payload.address.strip() or None
+    if payload.postal_code is not None:
+        current_user.postal_code = payload.postal_code.strip() or None
+    if payload.skills is not None:
+        current_user.skills = [s.strip() for s in payload.skills if s and s.strip()]
+    if payload.experience_years is not None:
+        current_user.experience_years = payload.experience_years
+    if payload.education is not None:
+        current_user.education = [e.strip() for e in payload.education if e and e.strip()]
 
     db.commit()
     db.refresh(current_user)
     return _format_user_auth_response(current_user, db)
+
+
+@router.post("/verify-password", status_code=status.HTTP_200_OK)
+def verify_owner_password(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Step-up security verification: confirms the logged-in owner's password
+    before initiating sensitive escrow funding or payment transfers.
+    """
+    raw_password = str(payload.get("password") or "")
+    if not raw_password or not verify_password(raw_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Incorrect account password. Owner verification failed.",
+        )
+    return {"verified": True, "userId": str(current_user.id)}
+
+
+@router.post(
+    "/forgot-password",
+    response_model=ForgotPasswordResponse,
+    status_code=status.HTTP_200_OK,
+)
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a 15-minute, single-use password reset token for the requested email.
+    In non-production environments (e.g. local/LAN demo without SMTP), returns the
+    reset token so the user can complete the reset directly in the UI.
+    """
+    user = db.query(User).filter(User.email == payload.email).first()
+    reset_token: Optional[str] = None
+    if user:
+        token = create_password_reset_token(
+            user_id=str(user.id),
+            email=user.email,
+            password_hash_prefix=user.hashed_password[:12],
+            expires_minutes=15,
+        )
+        logger.info(f"Generated password reset token for user ID {user.id}")
+        if not is_production_environment():
+            reset_token = token
+
+    return ForgotPasswordResponse(
+        message="If an account with that email exists, a password reset token has been generated.",
+        reset_token=reset_token,
+        expires_in_minutes=15,
+    )
+
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+def reset_password(
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Verify a single-use password reset token and update the user's bcrypt password hash.
+    """
+    try:
+        claims = decode_password_reset_token(payload.token.strip())
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password reset token has expired. Please request a new one.",
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid password reset token.",
+        )
+
+    user_id = claims.get("sub")
+    user = db.query(User).filter(User.id == int(user_id)).first() if user_id and str(user_id).isdigit() else None
+    if not user or user.email != claims.get("email") or user.hashed_password[:12] != claims.get("pwh"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This password reset token is no longer valid or has already been used.",
+        )
+
+    user.hashed_password = hash_password(payload.new_password)
+    db.commit()
+    logger.info(f"Password reset completed for user ID {user.id}")
+    return {"message": "Password has been reset successfully. You can now log in."}

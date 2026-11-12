@@ -26,6 +26,15 @@ class User(Base):
     domain = Column(String(120), nullable=True, default="General")
     bio = Column(Text, nullable=True)
     company_name = Column(String(120), nullable=True)
+    paypal_payout_email = Column(String(255), nullable=True)
+    city = Column(String(120), nullable=True)
+    state = Column(String(120), nullable=True)
+    country = Column(String(120), nullable=True)
+    address = Column(Text, nullable=True)
+    postal_code = Column(String(40), nullable=True)
+    skills = Column(JSON, nullable=True, default=list)
+    experience_years = Column(Integer, nullable=True)
+    education = Column(JSON, nullable=True, default=list)
 
     # Trust & Performance Scorecard Metrics
     trust_score = Column(Float, nullable=False, default=100.0)
