@@ -254,6 +254,9 @@ export interface EscrowContract {
   freelancerDomain?: string;
   freelancerRating?: number;
   freelancerBadges?: string[];
+  clientRating?: number;
+  clientReview?: string;
+  reviewedAt?: string;
   totalBudget: number;
   heldInEscrowAmount: number;
   releasedAmount: number;
@@ -274,6 +277,21 @@ export interface ContractMessage {
   senderRole: string;
   message: string;
   createdAt: string;
+}
+
+export interface MessageThreadSummary {
+  contractId: string;
+  projectTitle: string;
+  counterpartyName: string;
+  counterpartyRole: string;
+  counterpartyEmail?: string | null;
+  escrowStatus: EscrowStatus;
+  totalBudget: number;
+  currency: string;
+  messageCount: number;
+  lastMessage?: string | null;
+  lastMessageSender?: string | null;
+  lastMessageAt?: string | null;
 }
 
 export type DisputeStatus =

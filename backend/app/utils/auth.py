@@ -188,3 +188,17 @@ def require_freelancer(current_user: User = Depends(get_current_user)) -> User:
             detail=f"User '{current_user.name}' has role '{current_user.role.value}'. This action is restricted to FREELANCER accounts.",
         )
     return current_user
+
+
+def get_optional_current_user(
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """Resolve authenticated user if valid credentials are provided; otherwise return None."""
+    if not authorization and not x_user_id:
+        return None
+    try:
+        return get_current_user(x_user_id=x_user_id, authorization=authorization, db=db)
+    except HTTPException:
+        return None

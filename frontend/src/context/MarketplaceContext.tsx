@@ -73,6 +73,15 @@ interface MarketplaceContextType {
   authorizePayPalEscrow: (contractId: string, orderId?: string, simulate?: boolean) => Promise<void>;
   releaseMilestoneOverride: (contractId: string, milestoneId: string, password: string, reason?: string) => Promise<void>;
   releaseContractUpfront: (contractId: string, password: string, reason?: string) => Promise<void>;
+  submitReview: (contractId: string, rating: number, review?: string) => Promise<void>;
+  withdrawApplication: (applicationId: string) => Promise<void>;
+  withdrawProject: (projectId: string) => Promise<void>;
+  settleContractEarly: (
+    contractId: string,
+    freelancerAmount: number,
+    clientRefundAmount: number,
+    reason?: string
+  ) => Promise<void>;
   refreshMarketplace: () => Promise<void>;
   isLoading: boolean;
 }
@@ -163,6 +172,7 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
         coverLetter: appData.coverLetter,
         bidAmount: appData.bidAmount,
         currency: appData.currency || "USD",
+        freelancerProfile: appData.freelancerProfile,
       });
       setApplications((prev) => [created, ...prev]);
     },
@@ -361,6 +371,65 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
     [fetchAllData]
   );
 
+  const submitReview = useCallback(
+    async (contractId: string, rating: number, review?: string) => {
+      const res = await apiClient.submitReview(contractId, { rating, review });
+      setContracts((prev) =>
+        prev.map((c) =>
+          c.id === contractId
+            ? {
+                ...c,
+                clientRating: res?.clientRating ?? rating,
+                clientReview: res?.clientReview ?? review,
+                reviewedAt: res?.reviewedAt ?? new Date().toISOString(),
+              }
+            : c
+        )
+      );
+      await fetchAllData();
+    },
+    [fetchAllData]
+  );
+
+  const withdrawApplication = useCallback(
+    async (applicationId: string) => {
+      await apiClient.withdrawApplication(applicationId);
+      setApplications((prev) => prev.filter((a) => a.id !== applicationId));
+      await fetchAllData();
+    },
+    [fetchAllData]
+  );
+
+  const withdrawProject = useCallback(
+    async (projectId: string) => {
+      await apiClient.withdrawProject(projectId);
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      setApplications((prev) => prev.filter((a) => a.projectId !== projectId));
+      await fetchAllData();
+    },
+    [fetchAllData]
+  );
+
+  const settleContractEarly = useCallback(
+    async (
+      contractId: string,
+      freelancerAmount: number,
+      clientRefundAmount: number,
+      reason?: string
+    ) => {
+      const updated = await apiClient.settleContractEarly(contractId, {
+        freelancerAmount,
+        clientRefundAmount,
+        reason,
+      });
+      if (updated) {
+        setContracts((prev) => prev.map((c) => (c.id === contractId ? updated : c)));
+      }
+      await fetchAllData();
+    },
+    [fetchAllData]
+  );
+
   return (
     <MarketplaceContext.Provider
       value={{
@@ -381,6 +450,10 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
         authorizePayPalEscrow,
         releaseMilestoneOverride,
         releaseContractUpfront,
+        submitReview,
+        withdrawApplication,
+        withdrawProject,
+        settleContractEarly,
         refreshMarketplace: fetchAllData,
         isLoading,
       }}

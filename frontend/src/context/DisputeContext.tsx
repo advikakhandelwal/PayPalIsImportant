@@ -12,6 +12,7 @@ import {
   FinalSettlement,
 } from "@/types";
 import { apiClient } from "@/services/api";
+import { useAuth } from "@/context/AuthContext";
 
 const LS_DISPUTES = "tp_demo_disputes";
 
@@ -90,27 +91,57 @@ interface DisputeContextType {
 const DisputeContext = createContext<DisputeContextType | undefined>(undefined);
 
 export const DisputeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { currentUser, isAuthenticated } = useAuth();
   const [disputes, setDisputes] = useState<DisputeCase[]>([]);
   const [isHydrated, setIsHydrated] = useState<boolean>(false);
+  const lastSyncedRef = React.useRef<Record<string, string>>({});
 
-  useEffect(() => {
+  const fetchDisputes = useCallback(async () => {
+    if (!isAuthenticated || !currentUser.id) {
+      setDisputes([]);
+      setIsHydrated(true);
+      return;
+    }
     try {
-      const saved = readLS<DisputeCase[] | null>(LS_DISPUTES, null);
-      if (saved && Array.isArray(saved) && saved.length > 0) {
-        setDisputes(saved);
+      const serverDisputes = await apiClient.getDisputes();
+      if (Array.isArray(serverDisputes)) {
+        const nextMap: Record<string, string> = {};
+        for (const d of serverDisputes) {
+          if (d?.id) nextMap[d.id] = `${d.updatedAt || ""}:${d.status || ""}`;
+        }
+        lastSyncedRef.current = nextMap;
+        setDisputes(serverDisputes);
       }
     } catch {
-      // Safe fallback
+      // keep existing state on transient error
     } finally {
       setIsHydrated(true);
     }
-  }, []);
+  }, [isAuthenticated, currentUser.id]);
 
   useEffect(() => {
-    if (isHydrated) {
-      writeLS(LS_DISPUTES, disputes);
+    fetchDisputes();
+    if (!isAuthenticated || !currentUser.id) return;
+
+    const timer = setInterval(fetchDisputes, 5000);
+    const onFocus = () => fetchDisputes();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [fetchDisputes, isAuthenticated, currentUser.id]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser.id) return;
+    for (const d of disputes) {
+      const sig = `${d.updatedAt || ""}:${d.status || ""}`;
+      if (lastSyncedRef.current[d.id] && lastSyncedRef.current[d.id] !== sig) {
+        lastSyncedRef.current[d.id] = sig;
+        apiClient.updateDispute(d).catch(() => {});
+      }
     }
-  }, [disputes, isHydrated]);
+  }, [disputes, isAuthenticated, currentUser.id]);
 
   const getDisputeByContractId = useCallback(
     (contractId: string) => {
@@ -182,7 +213,9 @@ export const DisputeProvider: React.FC<{ children: React.ReactNode }> = ({ child
       updatedAt: new Date().toISOString(),
     };
 
+    lastSyncedRef.current[newDispute.id] = `${newDispute.updatedAt}:${newDispute.status}`;
     setDisputes((prev) => [newDispute, ...prev]);
+    apiClient.createDispute(newDispute).catch(() => {});
     return newDispute;
   }, [disputes]);
 

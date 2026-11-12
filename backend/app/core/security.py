@@ -157,3 +157,37 @@ def decode_access_token(token: str) -> dict:
     """
     secret_key = get_jwt_secret_key()
     return jwt.decode(token, secret_key, algorithms=[JWT_ALGORITHM])
+
+
+def create_password_reset_token(
+    user_id: str,
+    email: str,
+    password_hash_prefix: str,
+    expires_minutes: int = 15,
+) -> str:
+    """
+    Create a short-lived, single-use HS256 JWT for password reset.
+    Includes a prefix of the current password hash so the token becomes invalid once used.
+    """
+    secret_key = get_jwt_secret_key()
+    now = datetime.now(timezone.utc)
+    payload = {
+        "purpose": "password_reset",
+        "sub": str(user_id),
+        "email": email,
+        "pwh": password_hash_prefix,
+        "exp": now + timedelta(minutes=expires_minutes),
+    }
+    return jwt.encode(payload, secret_key, algorithm=JWT_ALGORITHM)
+
+
+def decode_password_reset_token(token: str) -> dict:
+    """
+    Decode and verify a password-reset JWT token.
+    Raises jwt.InvalidTokenError if expired, malformed, or wrong purpose.
+    """
+    secret_key = get_jwt_secret_key()
+    claims = jwt.decode(token, secret_key, algorithms=[JWT_ALGORITHM])
+    if claims.get("purpose") != "password_reset":
+        raise jwt.InvalidTokenError("Invalid token purpose.")
+    return claims

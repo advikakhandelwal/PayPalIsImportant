@@ -838,3 +838,13 @@ class TestPayPalEscrowAPILifecycle:
         po = client.post(f"/api/paypal/contracts/{cid}/milestones/{m1_id}/payout", headers=c_headers, json={})
         assert po.status_code == 200
         assert po.json()["recipientEmail"] == custom_payout
+
+        # Verify unified message inbox returns contract threads with last message preview
+        client.post(f"/api/contracts/{cid}/messages", headers=c_headers, json={"message": "Ready to start!"})
+        inbox_c = client.get("/api/contracts/messages/inbox", headers=c_headers)
+        inbox_f = client.get("/api/contracts/messages/inbox", headers=f_headers)
+        assert inbox_c.status_code == 200
+        assert inbox_f.status_code == 200
+        assert inbox_c.json()[0]["contractId"] == cid
+        assert inbox_c.json()[0]["lastMessage"] == "Ready to start!"
+        assert inbox_f.json()[0]["messageCount"] == 1

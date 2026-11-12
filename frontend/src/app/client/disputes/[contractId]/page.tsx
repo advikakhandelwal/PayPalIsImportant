@@ -803,7 +803,7 @@ export default function DisputeWorkspacePage() {
                   <div>
                     <span className="text-[11px] text-gray-400 block font-medium">Freelance Talent Contact</span>
                     <strong className="text-xs text-gray-800 block">{contract.freelancerName}</strong>
-                    <span className="text-xs text-[#0070E0] font-mono">vachan@trustpay.dev</span>
+                    <span className="text-xs text-[#0070E0] font-mono">{contract?.freelancerName || "Freelancer"}</span>
                   </div>
                 </div>
 
@@ -908,7 +908,7 @@ export default function DisputeWorkspacePage() {
                   </div>
 
                   <Badge variant="success" size="md">
-                    DEMO SETTLEMENT RECORD
+                    VERIFIED SETTLEMENT
                   </Badge>
                 </div>
 

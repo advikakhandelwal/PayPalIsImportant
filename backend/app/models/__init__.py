@@ -7,6 +7,8 @@ from app.models.submission import Submission, SubmissionType, VerificationStatus
 from app.models.application import Application, ApplicationStatus
 from app.models.paypal_transaction import PayPalTransaction, PayPalOperationType, PayPalTxStatus
 from app.models.contract_message import ContractMessage
+from app.models.dispute import Dispute
+from app.models.notification import Notification
 
 __all__ = [
     "Base",
@@ -29,4 +31,6 @@ __all__ = [
     "PayPalOperationType",
     "PayPalTxStatus",
     "ContractMessage",
+    "Dispute",
+    "Notification",
 ]

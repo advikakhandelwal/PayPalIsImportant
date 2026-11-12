@@ -56,6 +56,7 @@ from app.services.paypal_service import (
     build_idempotency_key,
     resolve_talent_payout_email,
 )
+from app.services.zapier_service import dispatch_zapier_event
 from app.utils.auth import get_current_user
 from app.utils.id_converter import resolve_entity_id
 
@@ -488,6 +489,18 @@ def authorize_escrow_route(
             detail="Failed to persist escrow authorization in database.",
         )
 
+    dispatch_zapier_event(
+        "escrow.funded",
+        {
+            "contractId": str(contract.id),
+            "projectTitle": contract.project_title,
+            "authorizationId": auth_id,
+            "amount": float(contract.total_budget),
+            "currency": contract.currency,
+            "mode": resp_mode,
+        },
+    )
+
     return EscrowOrderAuthorizeResponse(
         contract_id=str(contract.id),
         order_id=stored_order_id,
@@ -749,6 +762,19 @@ def payout_milestone_route(
     db.add(tx)
     db.commit()
 
+    dispatch_zapier_event(
+        "milestone.paid",
+        {
+            "contractId": str(contract.id),
+            "milestoneId": str(milestone.id),
+            "payoutBatchId": payout_res.get("payout_batch_id"),
+            "recipientEmail": payout_res["recipient_email"],
+            "amount": float(milestone.amount),
+            "currency": milestone.currency,
+            "mode": payout_res["mode"],
+        },
+    )
+
     return MilestonePayoutResponse(
         contract_id=str(contract.id),
         milestone_id=str(milestone.id),
@@ -936,6 +962,30 @@ def get_contract_paypal_transactions(
         db.query(PayPalTransaction)
         .filter(PayPalTransaction.contract_id == contract.id)
         .order_by(PayPalTransaction.id.desc())
+        .all()
+    )
+    return [_format_tx_record(tx) for tx in txs]
+
+
+@router.get("/ledger", response_model=List[PayPalTransactionRecordResponse])
+def get_global_paypal_ledger(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fetch all PayPal transactions across every contract owned by the authenticated user (for AG Grid Ledger)."""
+    contracts = (
+        db.query(Contract.id)
+        .filter((Contract.client_id == current_user.id) | (Contract.talent_id == current_user.id))
+        .all()
+    )
+    cids = [row[0] for row in contracts]
+    if not cids:
+        return []
+    txs = (
+        db.query(PayPalTransaction)
+        .filter(PayPalTransaction.contract_id.in_(cids))
+        .order_by(PayPalTransaction.id.desc())
+        .limit(250)
         .all()
     )
     return [_format_tx_record(tx) for tx in txs]

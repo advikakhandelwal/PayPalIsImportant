@@ -43,6 +43,7 @@ export default function ClientOnboardingPage() {
         companyName: companyName.trim(),
         email: email.trim(),
         domain: industry.trim(),
+        bio: companyDescription.trim(),
         companyDescription: companyDescription.trim(),
       });
     } catch {

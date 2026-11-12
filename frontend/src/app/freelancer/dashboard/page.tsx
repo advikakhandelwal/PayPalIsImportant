@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, Suspense, useMemo } from "react";
+import React, { useState, useEffect, useRef, Suspense, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useMarketplace } from "@/context/MarketplaceContext";
+import { useNotifications } from "@/context/NotificationContext";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { ContractChatPanel } from "@/components/contracts/ContractChatPanel";
 import { apiClient } from "@/services/api";
@@ -50,6 +51,7 @@ import {
   MapPin,
   Download,
   UploadCloud,
+  MessageSquare,
 } from "lucide-react";
 
 type FreelancerTab = "overview" | "projects" | "applications" | "contracts" | "profile" | "scorecard";
@@ -59,6 +61,7 @@ function FreelancerDashboardContent() {
   const initialTab = (searchParams.get("tab") as FreelancerTab) || "overview";
 
   const { currentUser, activeRole, setActiveRole, updateProfile, refreshUser, isHydrated } = useAuth();
+  const { notifications, addNotification } = useNotifications();
   const {
     projects,
     applications,
@@ -67,7 +70,16 @@ function FreelancerDashboardContent() {
     submitApplication,
     submitDeliverable,
     updateSubtaskStatus,
+    withdrawApplication,
+    settleContractEarly,
   } = useMarketplace();
+
+  const [withdrawingAppId, setWithdrawingAppId] = useState<string>("");
+  const [earlySettleModalOpen, setEarlySettleModalOpen] = useState(false);
+  const [earlyTalentShare, setEarlyTalentShare] = useState<string>("0");
+  const [earlyReason, setEarlyReason] = useState("");
+  const [earlyError, setEarlyError] = useState("");
+  const [isSettlingEarly, setIsSettlingEarly] = useState(false);
 
   // Frontend UI route guard: show access-denied state if wrong role
   const isFreelancerRole = activeRole === "FREELANCER" || currentUser.role === "FREELANCER";
@@ -98,6 +110,14 @@ function FreelancerDashboardContent() {
       setActiveTab(tabParam);
     }
   }, [searchParams]);
+
+  // Persist activeTab in URL query params so reload keeps the user on their current tab
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", activeTab);
+    window.history.replaceState(null, "", url.toString());
+  }, [activeTab]);
 
   // Marketplace Browse Projects Search, Filter & Sort State
   const [searchQuery, setSearchQuery] = useState("");
@@ -136,8 +156,22 @@ function FreelancerDashboardContent() {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editBio, setEditBio] = useState(currentUser.bio || "");
   const [editSkills, setEditSkills] = useState(currentUser.skills?.join(", ") || "");
+  const [editEducation, setEditEducation] = useState(currentUser.education?.join("\n") || "");
+  const [editExperienceYears, setEditExperienceYears] = useState(
+    currentUser.experienceYears != null ? String(currentUser.experienceYears) : ""
+  );
   const [editPortfolio, setEditPortfolio] = useState(currentUser.portfolioLinks?.[0] || "");
   const [profileSuccessMsg, setProfileSuccessMsg] = useState("");
+
+  useEffect(() => {
+    setEditBio(currentUser.bio || "");
+    setEditSkills(currentUser.skills?.join(", ") || "");
+    setEditEducation(currentUser.education?.join("\n") || "");
+    setEditExperienceYears(
+      currentUser.experienceYears != null ? String(currentUser.experienceYears) : ""
+    );
+    setEditPortfolio(currentUser.portfolioLinks?.[0] || "");
+  }, [currentUser.id, currentUser.bio, currentUser.skills, currentUser.education, currentUser.experienceYears, currentUser.portfolioLinks]);
 
   // PayPal Payout Email & Live Payout Ledger State
   const [paypalPayoutInput, setPaypalPayoutInput] = useState(
@@ -151,6 +185,29 @@ function FreelancerDashboardContent() {
   useEffect(() => {
     setPaypalPayoutInput(currentUser.paypalPayoutEmail || currentUser.email || "");
   }, [currentUser.paypalPayoutEmail, currentUser.email]);
+
+  // Cross-browser live payout notification sync from backend-confirmed released milestones
+  useEffect(() => {
+    if (!currentUser.id || myContracts.length === 0) return;
+    myContracts.forEach((c) => {
+      if (c.releasedAmount > 0) {
+        const releasedCount = c.milestones.filter((m) => m.status === "RELEASED").length;
+        const entityKey = `paypal-released-${c.id}-${releasedCount}-${c.releasedAmount}`;
+        const alreadyNotified = notifications.some((n) => n.entityId === entityKey);
+        if (!alreadyNotified) {
+          addNotification({
+            userId: currentUser.id,
+            userRole: "FREELANCER",
+            event: "MILESTONE_APPROVED",
+            title: `PayPal Payout Received (${formatCurrency(c.releasedAmount, c.currency)})`,
+            description: `${c.clientName} released ${releasedCount}/${c.milestones.length} milestone(s) on "${c.projectTitle}" to ${c.freelancerPayoutEmail || currentUser.paypalPayoutEmail || currentUser.email}.`,
+            linkHref: "/freelancer/dashboard?tab=scorecard",
+            entityId: entityKey,
+          });
+        }
+      }
+    });
+  }, [myContracts, currentUser.id, currentUser.paypalPayoutEmail, currentUser.email, notifications, addNotification]);
 
   useEffect(() => {
     const cid = selectedContractForTab?.id;
@@ -292,115 +349,165 @@ function FreelancerDashboardContent() {
     setSortBy("newest");
   };
 
-  // Freelancer's applications
-  const myApplications = applications.filter(
+  // Freelancer's applications (all vs active/ongoing, with status, search & project filter)
+  const [appStatusFilter, setAppStatusFilter] = useState<"ONGOING" | "COMPLETED" | "REJECTED" | "ALL">("ONGOING");
+  const [appSearchQuery, setAppSearchQuery] = useState<string>("");
+  const [filterAppProjectId, setFilterAppProjectId] = useState<string>("ALL");
+  const completedProjectIds = new Set([
+    ...projects.filter((p) => p.status === "COMPLETED").map((p) => p.id),
+    ...contracts
+      .filter((c) => c.escrowStatus === "COMPLETED" || c.escrowStatus === "REFUNDED")
+      .map((c) => c.projectId),
+  ]);
+  const allMyApplications = applications.filter(
     (a) => a.freelancerId === currentUser.id || a.freelancerName === currentUser.name
+  );
+  const myApplications = allMyApplications.filter((a) => !completedProjectIds.has(a.projectId));
+  const filteredMyApplications = allMyApplications.filter((a) => {
+    if (filterAppProjectId !== "ALL" && a.projectId !== filterAppProjectId) return false;
+    const projDone = completedProjectIds.has(a.projectId);
+    if (appStatusFilter === "ONGOING" && (a.status === "REJECTED" || projDone)) return false;
+    if (appStatusFilter === "COMPLETED" && !projDone) return false;
+    if (appStatusFilter === "REJECTED" && a.status !== "REJECTED") return false;
+    const q = appSearchQuery.trim().toLowerCase();
+    if (q) {
+      const targetProj = projects.find((p) => p.id === a.projectId);
+      const hay = `${targetProj?.title || ""} ${targetProj?.domain || ""} ${a.coverLetter} ${a.status}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const groupedMyApplications = Array.from(
+    filteredMyApplications.reduce((map, app) => {
+      const list = map.get(app.projectId) || [];
+      list.push(app);
+      map.set(app.projectId, list);
+      return map;
+    }, new Map<string, typeof allMyApplications>())
   );
 
   // CV Upload Enforcement States
   const [showCVPromptModal, setShowCVPromptModal] = useState<boolean>(false);
   const [pendingApplyProject, setPendingApplyProject] = useState<Project | null>(null);
   const [cvSuccessMsg, setCvSuccessMsg] = useState<string>("");
+  const [applyCvSource, setApplyCvSource] = useState<"profile" | "new">("profile");
+  const [applyErrorMsg, setApplyErrorMsg] = useState<string>("");
+  const profileCvInputRef = useRef<HTMLInputElement>(null);
+  const applyCvInputRef = useRef<HTMLInputElement>(null);
 
-  // Handler to simulate or process CV upload
-  const handleUploadCV = (fileName = "Vachan_Singh_FullStack_2026.pdf", fileSize = 152000) => {
-    const newCV: FreelancerCV = {
-      name: fileName,
-      size: fileSize,
-      uploadedAt: new Date().toISOString(),
-      url: "/demo/" + fileName,
-      extractedInfo: {
-        skills: currentUser.skills && currentUser.skills.length > 0
-          ? currentUser.skills
-          : ["Next.js 14", "React 18", "TypeScript", "Tailwind CSS", "FastAPI", "Python", "PostgreSQL", "Escrow Protocols"],
-        education: [
-          "B.Tech in Computer Science - IIT Bombay (CGPA 8.9/10)"
-        ],
-        experience: [
-          "Lead Frontend Engineer at Web3 FinTech (2023 - Present) - Built multi-party escrow release dashboards",
-          "Senior Software Developer at CloudScale Systems (2021 - 2023) - Architected responsive Next.js apps with 99.9% uptime"
-        ],
-        previousProjects: [
-          "Autonomous Milestone Escrow Portal - Next.js & TypeScript",
-          "AI-assisted Verification Pipeline - Python & Webhooks"
-        ],
-        certifications: [
-          "Certified Fintech Security Practitioner - FSI Council",
-          "AWS Certified Solutions Architect - Associate"
-        ],
-        summary: "6+ years experienced full-stack engineer specialized in high-assurance financial interfaces, milestone escrow mechanisms, and responsive frontend systems."
+  // Process a real selected CV file (.pdf / .doc / .docx / .txt)
+  const handleUploadCVFile = (file: File) => {
+    const saveCvWithUrl = (fileUrl: string) => {
+      const newCV: FreelancerCV = {
+        name: file.name,
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        url: fileUrl,
+        extractedInfo: {
+          skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : [],
+          education: currentUser.education || [],
+          experience:
+            currentUser.experienceYears != null
+              ? [`${currentUser.experienceYears} Year${currentUser.experienceYears === 1 ? "" : "s"} of Domain Experience`]
+              : [],
+          previousProjects: [],
+          certifications: currentUser.certifications || [],
+          summary: currentUser.bio?.trim()
+            ? currentUser.bio.trim()
+            : `${currentUser.name || "Freelancer"} — ${currentUser.domain || "General"}.`,
+        },
+      };
+
+      updateProfile({ cvFile: newCV });
+      setApplyCvSource("profile");
+      setApplyErrorMsg("");
+      setCvSuccessMsg(`CV "${file.name}" uploaded and saved to your profile.`);
+      setTimeout(() => setCvSuccessMsg(""), 3500);
+
+      if (pendingApplyProject) {
+        const proj = pendingApplyProject;
+        setPendingApplyProject(null);
+        setShowCVPromptModal(false);
+        setSelectedProjectForApply(proj);
+        setBidAmount(proj.totalBudget);
+        setCoverLetter("");
+        setApplicationSuccessMsg("");
       }
     };
 
-    updateProfile({
-      cvFile: newCV,
-    });
-
-    setCvSuccessMsg("CV successfully uploaded and verified. Credentials saved to your profile.");
-    setTimeout(() => setCvSuccessMsg(""), 3500);
-
-    // If an apply action was pending, auto-advance to application form
-    if (pendingApplyProject) {
-      const proj = pendingApplyProject;
-      setPendingApplyProject(null);
-      setShowCVPromptModal(false);
-      setSelectedProjectForApply(proj);
-      setBidAmount(proj.totalBudget);
-      setCoverLetter("");
-      setApplicationSuccessMsg("");
+    // Persist portable data URL for files <= 2 MB so clients on any device can view/download the real CV
+    if (file.size <= 2 * 1024 * 1024) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = typeof reader.result === "string" ? reader.result : URL.createObjectURL(file);
+        saveCvWithUrl(result);
+      };
+      reader.onerror = () => {
+        saveCvWithUrl(URL.createObjectURL(file));
+      };
+      reader.readAsDataURL(file);
+    } else {
+      saveCvWithUrl(URL.createObjectURL(file));
     }
   };
 
-  // Handle Apply Form (enforces CV check)
+  // Always open Apply Modal directly so user can pick Profile CV or upload a new CV
   const handleOpenApplyModal = (proj: Project) => {
-    if (!currentUser.cvFile) {
-      setPendingApplyProject(proj);
-      setShowCVPromptModal(true);
-      return;
-    }
     setSelectedProjectForApply(proj);
     setBidAmount(proj.totalBudget);
     setCoverLetter("");
     setApplicationSuccessMsg("");
+    setApplyErrorMsg("");
+    setApplyCvSource(currentUser.cvFile ? "profile" : "new");
   };
 
-  const handleSubmitApplication = (e: React.FormEvent) => {
+  const handleSubmitApplication = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProjectForApply || !coverLetter.trim() || bidAmount <= 0) return;
+    if (!selectedProjectForApply) return;
+    if (!currentUser.cvFile) {
+      setApplyErrorMsg("Please upload your CV / Resume before submitting your proposal.");
+      return;
+    }
+    if (!coverLetter.trim() || bidAmount <= 0) {
+      setApplyErrorMsg("Please enter a valid bid amount and cover letter.");
+      return;
+    }
+    setApplyErrorMsg("");
 
-    submitApplication({
-      projectId: selectedProjectForApply.id,
-      freelancerId: currentUser.id,
-      freelancerName: currentUser.name,
-      freelancerDomain: currentUser.domain,
-      coverLetter: coverLetter.trim(),
-      bidAmount,
-      currency: selectedProjectForApply.currency,
-      status: "PENDING",
-      trustScorecard: currentUser.trustScorecard,
-      freelancerProfile: {
-        name: currentUser.name,
-        avatarUrl: currentUser.avatarUrl,
-        skills: currentUser.skills,
-        experienceYears: currentUser.experienceYears || 6,
-        education: currentUser.education || ["B.Tech in Computer Science, IIT Bombay (2018-2022)"],
-        experience: [
-          "Lead Frontend Engineer at Web3 FinTech (2023 - Present)",
-          "Senior Software Developer at CloudScale Systems (2021 - 2023)"
-        ],
-        portfolioLinks: currentUser.portfolioLinks,
-        certifications: currentUser.certifications || ["Certified Fintech Security Practitioner (2024)", "AWS Certified Solutions Architect"],
-        cvFile: currentUser.cvFile,
-      },
-      estimatedDeliveryDays: 14,
-    });
+    try {
+      await submitApplication({
+        projectId: selectedProjectForApply.id,
+        freelancerId: currentUser.id,
+        freelancerName: currentUser.name,
+        freelancerDomain: currentUser.domain,
+        coverLetter: coverLetter.trim(),
+        bidAmount,
+        currency: selectedProjectForApply.currency,
+        status: "PENDING",
+        trustScorecard: currentUser.trustScorecard,
+        freelancerProfile: {
+          name: currentUser.name,
+          avatarUrl: currentUser.avatarUrl,
+          skills: currentUser.skills,
+          experienceYears: currentUser.experienceYears,
+          education: currentUser.education || [],
+          experience: currentUser.cvFile.extractedInfo?.experience || [],
+          portfolioLinks: currentUser.portfolioLinks,
+          certifications: currentUser.certifications || [],
+          cvFile: currentUser.cvFile,
+        },
+        estimatedDeliveryDays: 14,
+      });
 
-    setApplicationSuccessMsg("Application submitted successfully! You can track it under 'My Applications'.");
-    setTimeout(() => {
-      setSelectedProjectForApply(null);
-      setApplicationSuccessMsg("");
-      setActiveTab("applications");
-    }, 1500);
+      setApplicationSuccessMsg("Application submitted! Track it under 'My Applications'.");
+      setTimeout(() => {
+        setSelectedProjectForApply(null);
+        setApplicationSuccessMsg("");
+        setActiveTab("applications");
+      }, 1200);
+    } catch (err: any) {
+      setApplyErrorMsg(err?.message || "Failed to submit application.");
+    }
   };
 
   // Handle Deliverable Submit & Resubmit
@@ -467,16 +574,22 @@ function FreelancerDashboardContent() {
   };
 
   // Handle Profile Save
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     const skillsArray = editSkills
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
+    const educationArray = editEducation
+      .split(/\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean);
 
-    updateProfile({
+    await updateProfile({
       bio: editBio.trim(),
       skills: skillsArray,
+      education: educationArray,
+      experienceYears: editExperienceYears ? parseInt(editExperienceYears, 10) || 0 : undefined,
       portfolioLinks: editPortfolio.trim() ? [editPortfolio.trim()] : [],
     });
 
@@ -520,7 +633,7 @@ function FreelancerDashboardContent() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-white border border-slate-200 shadow-xs">
         <div className="flex items-center gap-4">
@@ -634,6 +747,61 @@ function FreelancerDashboardContent() {
       {/* TAB 1: OVERVIEW */}
       {activeTab === "overview" && (
         <div className="space-y-6">
+          {/* Quick PayPal Payout Setup & Recent Transfer Alert */}
+          {!currentUser.paypalPayoutEmail && (
+            <Card className="border-blue-200 bg-blue-50/50">
+              <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-0.5 text-xs">
+                  <p className="font-bold text-[#003087]">
+                    Set Your PayPal Payout Email (No Bank Details Needed)
+                  </p>
+                  <p className="text-slate-600">
+                    PayPal sends milestone payments straight to this email — PayPal handles withdrawing funds to your linked bank account.
+                  </p>
+                  {payoutEmailMsg && <p className="text-emerald-700 font-semibold pt-1">{payoutEmailMsg}</p>}
+                  {payoutEmailErr && <p className="text-rose-700 font-semibold pt-1">{payoutEmailErr}</p>}
+                </div>
+                <form onSubmit={handleSavePayoutEmail} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+                  <input
+                    type="email"
+                    required
+                    value={paypalPayoutInput}
+                    onChange={(e) => setPaypalPayoutInput(e.target.value)}
+                    placeholder="your-paypal@example.com"
+                    className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 min-w-[230px] focus:outline-none focus:ring-2 focus:ring-[#0070E0]"
+                  />
+                  <Button type="submit" variant="primary" size="sm" disabled={isSavingPayoutEmail}>
+                    {isSavingPayoutEmail ? "Saving..." : "Save PayPal Email"}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          )}
+
+          {myContracts.some((c) => c.releasedAmount > 0) && (
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <strong className="text-emerald-950 block">
+                    PayPal Payouts Transferred:{" "}
+                    {formatCurrency(
+                      myContracts.reduce((acc, c) => acc + c.releasedAmount, 0),
+                      myContracts[0]?.currency || "USD"
+                    )}
+                  </strong>
+                  <span className="text-emerald-800">
+                    Sent to your PayPal payout email:{" "}
+                    <strong className="font-mono">{currentUser.paypalPayoutEmail || currentUser.email}</strong>
+                  </span>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setActiveTab("scorecard")}>
+                View Earnings &amp; Worktime Report
+              </Button>
+            </div>
+          )}
+
           {/* Metrics */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <Card className="p-4 space-y-1">
@@ -1139,19 +1307,102 @@ function FreelancerDashboardContent() {
       {/* TAB 3: MY APPLICATIONS */}
       {activeTab === "applications" && (
         <div className="space-y-6">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">My Applications & Proposals</h2>
-            <p className="text-xs text-slate-500">Track application statuses and client review outcomes.</p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">My Applications &amp; Proposals</h2>
+              <p className="text-xs text-slate-500">Grouped by project — track ongoing, completed, and rejected proposals.</p>
+            </div>
+            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-full border border-slate-200 self-start">
+              {(
+                [
+                  { id: "ONGOING", label: "Ongoing" },
+                  { id: "COMPLETED", label: "Completed" },
+                  { id: "REJECTED", label: "Rejected" },
+                  { id: "ALL", label: "All" },
+                ] as const
+              ).map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => setAppStatusFilter(st.id)}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                    appStatusFilter === st.id
+                      ? "bg-white text-paypal-dark shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="space-y-4">
-            {myApplications.map((app) => (
+          {/* Search & Project Filter Bar */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search your applications by project title, domain, or cover letter..."
+                value={appSearchQuery}
+                onChange={(e) => setAppSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-paypal-blue/30"
+              />
+            </div>
+            <select
+              value={filterAppProjectId}
+              onChange={(e) => setFilterAppProjectId(e.target.value)}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700"
+            >
+              <option value="ALL">All Projects</option>
+              {Array.from(new Set(allMyApplications.map((a) => a.projectId))).map((pid) => {
+                const proj = projects.find((p) => p.id === pid);
+                return (
+                  <option key={pid} value={pid}>
+                    {proj?.title || `Project #${pid}`}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          <div className="space-y-5">
+            {groupedMyApplications.map(([projId, projApps]) => {
+              const targetProj = projects.find((p) => p.id === projId);
+              const linkedContract = myContracts.find((c) => c.projectId === projId);
+              return (
+                <div key={projId} className="space-y-3 p-4 rounded-2xl bg-slate-50/80 border border-slate-200">
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="w-4 h-4 text-paypal-blue" />
+                      <h3 className="text-sm font-bold text-slate-900">
+                        {targetProj?.title || linkedContract?.projectTitle || `Project #${projId}`}
+                      </h3>
+                      {(targetProj?.domain || linkedContract?.projectDomain) && (
+                        <Badge variant="paypal" size="sm">
+                          {targetProj?.domain || linkedContract?.projectDomain}
+                        </Badge>
+                      )}
+                    </div>
+                    <span className="text-xs font-semibold text-slate-500">
+                      {projApps.length} Application{projApps.length === 1 ? "" : "s"}
+                      {targetProj ? ` • Budget: ${formatCurrency(targetProj.totalBudget, targetProj.currency)}` : ""}
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {projApps.map((app, idx) => {
+                      const myAppNumber = projApps.length - idx;
+                      return (
               <Card key={app.id}>
                 <CardHeader>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <div className="flex items-center gap-2">
-                        <CardTitle className="text-base">Application #{app.id.slice(-6)}</CardTitle>
+                        <CardTitle className="text-base">
+                          {targetProj
+                            ? `${targetProj.title} — Application #${myAppNumber}`
+                            : `Application #${myAppNumber}`}
+                        </CardTitle>
                         <Badge
                           variant={
                             app.status === "ACCEPTED"
@@ -1193,6 +1444,31 @@ function FreelancerDashboardContent() {
                     </div>
                   )}
 
+                  {(app.status === "PENDING" || app.status === "REJECTED") && (
+                    <div className="pt-2 flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                        disabled={withdrawingAppId === app.id}
+                        onClick={async () => {
+                          setWithdrawingAppId(app.id);
+                          try {
+                            await withdrawApplication(app.id);
+                          } finally {
+                            setWithdrawingAppId("");
+                          }
+                        }}
+                      >
+                        {withdrawingAppId === app.id
+                          ? "Removing..."
+                          : app.status === "REJECTED"
+                          ? "Remove"
+                          : "Withdraw Application"}
+                      </Button>
+                    </div>
+                  )}
+
                   {app.status === "ACCEPTED" && (
                     <div className="pt-2 flex justify-end">
                       <Button
@@ -1211,9 +1487,14 @@ function FreelancerDashboardContent() {
                   )}
                 </CardContent>
               </Card>
-            ))}
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
 
-            {myApplications.length === 0 && (
+            {filteredMyApplications.length === 0 && (
               <div className="p-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
                 <FileCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                 <p className="text-sm font-semibold">No active applications found.</p>
@@ -1358,12 +1639,36 @@ function FreelancerDashboardContent() {
                     </p>
                   </div>
                   <Link
-                    href={`/client/disputes/${selectedContractForTab.id}`}
+                    href={`/messages?contractId=${selectedContractForTab.id}`}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-50 hover:bg-blue-100 text-[#0070E0] border border-blue-200 transition-colors shadow-2xs"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-[#0070E0]" />
+                    <span>Messages</span>
+                  </Link>
+                  <Link
+                    href={`/disputes?contractId=${selectedContractForTab.id}`}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-2xs"
                   >
                     <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Dispute Workspace</span>
+                    <span>Disputes</span>
                   </Link>
+                  {selectedContractForTab.escrowStatus !== "COMPLETED" &&
+                    selectedContractForTab.escrowStatus !== "REFUNDED" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs text-rose-700 border-rose-200 hover:bg-rose-50"
+                        onClick={() => {
+                          const held = selectedContractForTab.heldInEscrowAmount || 0;
+                          setEarlyTalentShare(String(Math.round(held * 0.5)));
+                          setEarlyReason("");
+                          setEarlyError("");
+                          setEarlySettleModalOpen(true);
+                        }}
+                      >
+                        End Early / Settle
+                      </Button>
+                    )}
                 </div>
               </div>
             </CardHeader>
@@ -1801,6 +2106,28 @@ function FreelancerDashboardContent() {
                   </div>
 
                   <div>
+                    <span className="font-semibold text-slate-700 block mb-1">Education &amp; Credentials:</span>
+                    {currentUser.education && currentUser.education.length > 0 ? (
+                      <ul className="list-disc list-inside text-slate-600 space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        {currentUser.education.map((edu, idx) => (
+                          <li key={idx}>{edu}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-slate-400 italic">No education credentials added yet. Click &apos;Edit Profile&apos; to add your degree or certifications.</span>
+                    )}
+                  </div>
+
+                  <div>
+                    <span className="font-semibold text-slate-700 block mb-1">Experience:</span>
+                    <span className="text-slate-700 font-medium">
+                      {currentUser.experienceYears != null
+                        ? `${currentUser.experienceYears} Year${currentUser.experienceYears === 1 ? "" : "s"}`
+                        : "Not specified"}
+                    </span>
+                  </div>
+
+                  <div>
                     <span className="font-semibold text-slate-700 block mb-1">Portfolio & GitHub Links:</span>
                     {currentUser.portfolioLinks && currentUser.portfolioLinks.length > 0 ? (
                       currentUser.portfolioLinks.map((link, idx) => (
@@ -1836,6 +2163,24 @@ function FreelancerDashboardContent() {
                     required
                     value={editSkills}
                     onChange={(e) => setEditSkills(e.target.value)}
+                  />
+
+                  <Textarea
+                    label="Education & Credentials (one per line or comma separated)"
+                    rows={2}
+                    placeholder="e.g. B.Tech in Computer Science (2024)"
+                    value={editEducation}
+                    onChange={(e) => setEditEducation(e.target.value)}
+                  />
+
+                  <Input
+                    label="Years of Experience"
+                    type="number"
+                    min="0"
+                    max="60"
+                    placeholder="e.g. 2"
+                    value={editExperienceYears}
+                    onChange={(e) => setEditExperienceYears(e.target.value)}
                   />
 
                   <Input
@@ -1906,11 +2251,22 @@ function FreelancerDashboardContent() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                      <input
+                        ref={profileCvInputRef}
+                        type="file"
+                        accept=".pdf,.doc,.docx,.txt"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleUploadCVFile(file);
+                          e.target.value = "";
+                        }}
+                      />
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => handleUploadCV("Vachan_Singh_FullStack_Updated_2026.pdf", 165000)}
+                        onClick={() => profileCvInputRef.current?.click()}
                         className="text-xs"
                       >
                         <UploadCloud className="w-3.5 h-3.5 mr-1 text-paypal-blue" />
@@ -1971,11 +2327,22 @@ function FreelancerDashboardContent() {
                       Uploading your CV allows clients to inspect your qualifications and is required before submitting project proposals.
                     </p>
                   </div>
+                  <input
+                    ref={profileCvInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx,.txt"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleUploadCVFile(file);
+                      e.target.value = "";
+                    }}
+                  />
                   <Button
                     type="button"
                     variant="primary"
                     size="sm"
-                    onClick={() => handleUploadCV("Vachan_Singh_FullStack_2026.pdf", 148500)}
+                    onClick={() => profileCvInputRef.current?.click()}
                   >
                     <UploadCloud className="w-3.5 h-3.5 mr-1.5" />
                     Upload CV Document (.pdf / .docx)
@@ -1987,15 +2354,155 @@ function FreelancerDashboardContent() {
         </div>
       )}
 
-      {/* TAB 6: TRUST SCORECARD */}
-      {activeTab === "scorecard" && (
+      {/* TAB 6: TRUST SCORECARD & EARNINGS / WORKTIME REPORT */}
+      {activeTab === "scorecard" && (() => {
+        const totalEarned = myContracts.reduce((sum, c) => sum + (c.releasedAmount || 0), 0);
+        const totalEscrowPending = myContracts.reduce((sum, c) => sum + (c.heldInEscrowAmount || 0), 0);
+        const allMs = myContracts.flatMap((c) => c.milestones);
+        const releasedMs = allMs.filter((m) => m.status === "RELEASED").length;
+        const nowMs = Date.now();
+        const contractWorkDays = myContracts.map((c) => {
+          const start = new Date(c.createdAt || nowMs).getTime();
+          const days = Math.max(1, Math.round((nowMs - start) / (1000 * 60 * 60 * 24)));
+          return { contract: c, days };
+        });
+        const totalWorkDays = contractWorkDays.reduce((acc, item) => acc + item.days, 0);
+        const avgDaysPerMilestone = releasedMs > 0 ? (totalWorkDays / releasedMs).toFixed(1) : "—";
+        const reportCurrency = myContracts[0]?.currency || "USD";
+
+        const handleDownloadReportCsv = () => {
+          const header = ["Contract ID", "Project Title", "Client", "Worktime (Days)", "Milestones Done", "Total Milestones", "Earned (USD)", "Held in Escrow (USD)", "PayPal Payout Email"];
+          const rows = contractWorkDays.map(({ contract: c, days }) => {
+            const done = c.milestones.filter((m) => m.status === "RELEASED").length;
+            return [
+              c.id,
+              `"${(c.projectTitle || "").replace(/"/g, '""')}"`,
+              `"${(c.clientName || "").replace(/"/g, '""')}"`,
+              days,
+              done,
+              c.milestones.length,
+              c.releasedAmount,
+              c.heldInEscrowAmount,
+              c.freelancerPayoutEmail || currentUser.paypalPayoutEmail || currentUser.email,
+            ].join(",");
+          });
+          const csv = [header.join(","), ...rows].join("\n");
+          const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "trustpay-freelancer-earnings-worktime-report.csv";
+          a.click();
+          URL.revokeObjectURL(url);
+        };
+
+        return (
         <div className="space-y-6">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Trust & Performance Scorecard</h2>
-            <p className="text-xs text-slate-500">
-              Tamper-resistant algorithmic reputation calculated from verified milestone escrow completions.
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Earnings, Worktime &amp; Performance Report</h2>
+              <p className="text-xs text-slate-500">
+                Complete breakdown of your PayPal payouts, active escrow, milestone worktime, and verified trust metrics.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleDownloadReportCsv}>
+              <Download className="w-3.5 h-3.5 mr-1.5" />
+              Download Report (CSV)
+            </Button>
           </div>
+
+          {/* Earnings & Worktime Analytics Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="p-5 space-y-1 border-emerald-200 bg-emerald-50/30">
+              <span className="text-xs font-semibold text-emerald-800 block">Total Earned (PayPal)</span>
+              <div className="text-2xl font-extrabold text-emerald-700">
+                {formatCurrency(totalEarned, reportCurrency)}
+              </div>
+              <p className="text-[11px] text-emerald-700/80">
+                Sent to {currentUser.paypalPayoutEmail || currentUser.email}
+              </p>
+            </Card>
+            <Card className="p-5 space-y-1">
+              <span className="text-xs font-semibold text-slate-500 block">Pending in Escrow</span>
+              <div className="text-2xl font-extrabold text-[#003087]">
+                {formatCurrency(totalEscrowPending, reportCurrency)}
+              </div>
+              <p className="text-[11px] text-slate-400">Locked for upcoming milestones</p>
+            </Card>
+            <Card className="p-5 space-y-1">
+              <span className="text-xs font-semibold text-slate-500 block">Active Worktime</span>
+              <div className="text-2xl font-extrabold text-slate-900">{totalWorkDays} days</div>
+              <p className="text-[11px] text-slate-400">
+                Avg {avgDaysPerMilestone} days / released milestone
+              </p>
+            </Card>
+            <Card className="p-5 space-y-1">
+              <span className="text-xs font-semibold text-slate-500 block">Milestones Paid</span>
+              <div className="text-2xl font-extrabold text-paypal-blue">
+                {releasedMs} / {allMs.length}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {allMs.length > 0 ? `${Math.round((releasedMs / allMs.length) * 100)}% completion rate` : "No milestones yet"}
+              </p>
+            </Card>
+          </div>
+
+          {/* Per-Contract Earnings & Worktime Breakdown */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Contract-by-Contract Earnings &amp; Worktime Analysis</CardTitle>
+              <CardDescription>
+                Live financial &amp; delivery breakdown across all {myContracts.length} contract(s).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {contractWorkDays.length === 0 ? (
+                <p className="text-xs text-slate-500 py-4 text-center">
+                  No contracts yet. Accepted proposals will appear in your earnings &amp; worktime report here.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
+                        <th className="py-2.5 pr-4">Project</th>
+                        <th className="py-2.5 pr-4">Client</th>
+                        <th className="py-2.5 pr-4">Worktime</th>
+                        <th className="py-2.5 pr-4">Milestones</th>
+                        <th className="py-2.5 pr-4">Paid via PayPal</th>
+                        <th className="py-2.5 pr-4">In Escrow</th>
+                        <th className="py-2.5">Payout Destination</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {contractWorkDays.map(({ contract: c, days }) => {
+                        const done = c.milestones.filter((m) => m.status === "RELEASED").length;
+                        return (
+                          <tr key={c.id} className="hover:bg-slate-50/70">
+                            <td className="py-3 pr-4 font-bold text-slate-900">{c.projectTitle}</td>
+                            <td className="py-3 pr-4 text-slate-600">{c.clientName}</td>
+                            <td className="py-3 pr-4 text-slate-700 font-medium">{days} day(s)</td>
+                            <td className="py-3 pr-4 text-slate-700">
+                              {done} / {c.milestones.length}
+                            </td>
+                            <td className="py-3 pr-4 font-bold text-emerald-700">
+                              {formatCurrency(c.releasedAmount, c.currency)}
+                            </td>
+                            <td className="py-3 pr-4 font-semibold text-[#003087]">
+                              {formatCurrency(c.heldInEscrowAmount, c.currency)}
+                            </td>
+                            <td className="py-3 font-mono text-[11px] text-slate-600">
+                              {c.freelancerPayoutEmail || currentUser.paypalPayoutEmail || currentUser.email}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="p-6 text-center space-y-2">
@@ -2070,7 +2577,8 @@ function FreelancerDashboardContent() {
             </CardContent>
           </Card>
         </div>
-      )}
+        );
+      })()}
 
       {/* MODAL 1: APPLY TO PROJECT */}
       {selectedProjectForApply && (
@@ -2096,6 +2604,65 @@ function FreelancerDashboardContent() {
                   <span>{applicationSuccessMsg}</span>
                 </div>
               )}
+              {applyErrorMsg && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs">
+                  {applyErrorMsg}
+                </div>
+              )}
+
+              {/* CV / Resume Selection: Use Profile CV or Upload New */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs">
+                <span className="font-bold text-slate-800 block">
+                  CV / Resume for this Application <span className="text-rose-500">*</span>
+                </span>
+                <input
+                  ref={applyCvInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleUploadCVFile(file);
+                    e.target.value = "";
+                  }}
+                />
+                {currentUser.cvFile ? (
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 p-2.5 rounded-lg bg-white border border-blue-200 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="applyCvChoice"
+                        checked={applyCvSource === "profile"}
+                        onChange={() => setApplyCvSource("profile")}
+                      />
+                      <FileCheck className="w-4 h-4 text-[#0070E0] shrink-0" />
+                      <span className="flex-1 truncate font-semibold text-slate-900">
+                        Use Profile CV: {currentUser.cvFile.name}
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        {currentUser.cvFile.size ? `${Math.max(1, Math.round(currentUser.cvFile.size / 1024))} KB` : ""}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => applyCvInputRef.current?.click()}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-slate-300 bg-white hover:border-[#0070E0] text-slate-700 font-semibold cursor-pointer"
+                    >
+                      <UploadCloud className="w-3.5 h-3.5 text-[#0070E0]" />
+                      Or Upload a Different CV (.pdf, .doc, .docx)
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => applyCvInputRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-dashed border-[#0070E0] bg-white hover:bg-blue-50 text-[#003087] font-bold cursor-pointer"
+                  >
+                    <UploadCloud className="w-4 h-4 text-[#0070E0]" />
+                    Upload CV / Resume (.pdf, .doc, .docx)
+                  </button>
+                )}
+              </div>
 
               <div className="space-y-1.5 text-left">
                 <label className="block text-xs font-semibold text-slate-700">
@@ -2244,11 +2811,11 @@ function FreelancerDashboardContent() {
               <Button
                 variant="primary"
                 size="md"
-                onClick={() => handleUploadCV("Vachan_Singh_FullStack_2026.pdf", 148500)}
+                onClick={() => profileCvInputRef.current?.click()}
                 className="w-full justify-center"
               >
                 <UploadCloud className="w-4 h-4 mr-1.5" />
-                Upload &amp; Continue Application
+                Choose CV File &amp; Continue
               </Button>
               <Button
                 variant="ghost"
@@ -2465,6 +3032,93 @@ function FreelancerDashboardContent() {
                 <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: EARLY CONTRACT SETTLEMENT ── */}
+      {earlySettleModalOpen && selectedContractForTab && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">End Contract Early with Settlement</h3>
+                <p className="text-xs text-slate-500">
+                  Remaining Held Escrow: {formatCurrency(selectedContractForTab.heldInEscrowAmount, selectedContractForTab.currency)}
+                </p>
+              </div>
+              <button onClick={() => setEarlySettleModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {earlyError && (
+              <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 p-2.5 rounded-lg">{earlyError}</p>
+            )}
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const held = selectedContractForTab.heldInEscrowAmount || 0;
+                const talentAmt = Math.max(0, Number(earlyTalentShare) || 0);
+                if (talentAmt > held) {
+                  setEarlyError(`Talent share cannot exceed ${formatCurrency(held, selectedContractForTab.currency)}.`);
+                  return;
+                }
+                const refundAmt = Math.max(0, Number((held - talentAmt).toFixed(2)));
+                setIsSettlingEarly(true);
+                setEarlyError("");
+                try {
+                  await settleContractEarly(
+                    selectedContractForTab.id,
+                    talentAmt,
+                    refundAmt,
+                    earlyReason.trim() || "Early contract termination with mutual settlement"
+                  );
+                  setEarlySettleModalOpen(false);
+                } catch (err: any) {
+                  setEarlyError(err?.message || "Failed to settle contract early.");
+                } finally {
+                  setIsSettlingEarly(false);
+                }
+              }}
+              className="space-y-3"
+            >
+              <Input
+                label={`Your Payout Share (${selectedContractForTab.currency})`}
+                type="number"
+                min="0"
+                max={selectedContractForTab.heldInEscrowAmount || 0}
+                step="0.01"
+                value={earlyTalentShare}
+                onChange={(e) => setEarlyTalentShare(e.target.value)}
+              />
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 flex justify-between">
+                <span>Client Refund Amount:</span>
+                <strong>
+                  {formatCurrency(
+                    Math.max(0, (selectedContractForTab.heldInEscrowAmount || 0) - (Number(earlyTalentShare) || 0)),
+                    selectedContractForTab.currency
+                  )}
+                </strong>
+              </div>
+              <Textarea
+                label="Settlement Reason"
+                required
+                rows={2}
+                placeholder="Explain why the contract is ending early..."
+                value={earlyReason}
+                onChange={(e) => setEarlyReason(e.target.value)}
+              />
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setEarlySettleModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" size="sm" isLoading={isSettlingEarly}>
+                  Confirm Early Settlement
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

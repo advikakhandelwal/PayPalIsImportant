@@ -26,7 +26,7 @@ export default function RootLayout({
             <DisputeProvider>
               <MarketplaceProvider>
                 <Navbar />
-                <main className="flex-1 flex flex-col">{children}</main>
+                <main className="flex-1 w-full">{children}</main>
                 <Footer />
               </MarketplaceProvider>
             </DisputeProvider>

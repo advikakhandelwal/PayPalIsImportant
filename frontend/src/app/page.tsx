@@ -451,10 +451,21 @@ export default function HomePage() {
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-right">
-                  <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider block">Total Escrow Vault</span>
-                  <span className="text-2xl font-extrabold text-[#003087]">
-                    {formatCurrency(previewContract.totalBudget, previewContract.currency)}
-                  </span>
+                  {isAuthenticated && activeContract?.id ? (
+                    <>
+                      <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider block">Total Escrow Vault</span>
+                      <span className="text-2xl font-extrabold text-[#003087]">
+                        {formatCurrency(previewContract.totalBudget, previewContract.currency)}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider block">Escrow Protection</span>
+                      <span className="text-sm font-bold text-[#0070E0]">
+                        Sign in to view live balances
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -464,8 +475,9 @@ export default function HomePage() {
               <div className="flex items-center justify-between text-xs font-bold text-gray-500 mb-2">
                 <span>Fund Settlement Progress</span>
                 <span className="text-[#0070E0]">
-                  {formatCurrency(previewContract.releasedAmount, previewContract.currency)} of{" "}
-                  {formatCurrency(previewContract.totalBudget, previewContract.currency)} Released
+                  {isAuthenticated && activeContract?.id
+                    ? `${formatCurrency(previewContract.releasedAmount, previewContract.currency)} of ${formatCurrency(previewContract.totalBudget, previewContract.currency)} Released`
+                    : `${progressPct}% Milestone Progress`}
                 </span>
               </div>
               <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
@@ -517,7 +529,9 @@ export default function HomePage() {
 
                       <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
                         <span className="font-extrabold text-[#003087]">
-                          {formatCurrency(ms.paymentAmount, ms.currency)}
+                          {isAuthenticated && activeContract?.id
+                            ? formatCurrency(ms.paymentAmount, ms.currency)
+                            : `${previewContract.totalBudget > 0 ? Math.round((ms.paymentAmount / previewContract.totalBudget) * 100) : 0}% Milestone Share`}
                         </span>
                         <span className="text-gray-400 font-medium">Due {formatDate(ms.deadline)}</span>
                       </div>

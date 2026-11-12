@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useMarketplace } from "@/context/MarketplaceContext";
+import { useNotifications } from "@/context/NotificationContext";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { ContractChatPanel } from "@/components/contracts/ContractChatPanel";
 import { PayPalSmartButtons } from "@/components/paypal/PayPalSmartButtons";
@@ -32,6 +33,7 @@ import {
   ShieldAlert,
   AlertCircle,
   Edit3,
+  Search,
   X,
   Send,
   Layers,
@@ -49,6 +51,7 @@ import {
   Download,
   FileCheck,
   Award,
+  MessageSquare,
 } from "lucide-react";
 
 type ClientTab = "overview" | "projects" | "post" | "proposals" | "contracts" | "profile" | "details";
@@ -86,6 +89,7 @@ function ClientDashboardContent() {
   const initialProjectId = searchParams.get("id") || "";
 
   const { currentUser, activeRole, setActiveRole, updateProfile, isHydrated } = useAuth();
+  const { addNotification } = useNotifications();
   const {
     projects,
     applications,
@@ -101,8 +105,18 @@ function ClientDashboardContent() {
     authorizePayPalEscrow,
     releaseMilestoneOverride,
     releaseContractUpfront,
+    submitReview,
+    withdrawProject,
+    settleContractEarly,
     refreshMarketplace,
   } = useMarketplace();
+
+  const [withdrawingProjectId, setWithdrawingProjectId] = useState<string>("");
+  const [earlySettleModalOpen, setEarlySettleModalOpen] = useState(false);
+  const [earlyTalentShare, setEarlyTalentShare] = useState<string>("0");
+  const [earlyReason, setEarlyReason] = useState("");
+  const [earlyError, setEarlyError] = useState("");
+  const [isSettlingEarly, setIsSettlingEarly] = useState(false);
 
   // Frontend UI route guard: show access-denied state if wrong role.
   // NOTE: This is demo-only UI filtering. Real security lives in the backend.
@@ -125,6 +139,19 @@ function ClientDashboardContent() {
       setSelectedProjectId(idParam);
     }
   }, [searchParams]);
+
+  // Persist activeTab & selectedProjectId in URL query params so reload stays on the current tab
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", activeTab);
+    if (activeTab === "details" && selectedProjectId) {
+      url.searchParams.set("id", selectedProjectId);
+    } else {
+      url.searchParams.delete("id");
+    }
+    window.history.replaceState(null, "", url.toString());
+  }, [activeTab, selectedProjectId]);
 
   // Project Creation Wizard State: 'form' | 'preview'
   const [wizardStep, setWizardStep] = useState<"form" | "preview">("form");
@@ -259,13 +286,34 @@ function ClientDashboardContent() {
 
   // Proposals Filter State
   const [proposalFilter, setProposalFilter] = useState<"ALL" | "AI_SHORTLIST">("ALL");
+  const [appStatusFilter, setAppStatusFilter] = useState<"ONGOING" | "COMPLETED" | "ALL">("ONGOING");
+  const [appSearchQuery, setAppSearchQuery] = useState<string>("");
   const [filterByProjectId, setFilterByProjectId] = useState<string>("ALL");
 
-  // Ownership-filtered applications: only for this client's own projects
-  const myProjectIds = projects
+  // Ownership-filtered applications: exclude REJECTED so declined candidates never reappear for the client
+  const completedContractProjectIds = new Set(
+    contracts
+      .filter((c) => c.escrowStatus === "COMPLETED" || c.escrowStatus === "REFUNDED")
+      .map((c) => c.projectId)
+  );
+  const allClientProjectIds = projects
     .filter((p) => p.clientId === currentUser.id)
     .map((p) => p.id);
-  const localApplications = applications.filter((a) => myProjectIds.includes(a.projectId));
+  const allClientApplications = applications.filter(
+    (a) => allClientProjectIds.includes(a.projectId) && a.status !== "REJECTED"
+  );
+
+  const myProjectIds = projects
+    .filter(
+      (p) =>
+        p.clientId === currentUser.id &&
+        p.status !== "COMPLETED" &&
+        !completedContractProjectIds.has(p.id)
+    )
+    .map((p) => p.id);
+  const localApplications = applications.filter(
+    (a) => myProjectIds.includes(a.projectId) && a.status !== "REJECTED"
+  );
   // Request Revision Modal State
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [revisionMilestoneId, setRevisionMilestoneId] = useState<string>("");
@@ -278,18 +326,48 @@ function ClientDashboardContent() {
   const [selectedApplicantForReview, setSelectedApplicantForReview] = useState<Application | null>(null);
   const [showCVPreviewModal, setShowCVPreviewModal] = useState<boolean>(false);
 
-  // Edit Company Profile State (with transparent location details)
+  // Edit Company Profile State (strictly user-provided, zero hardcoded defaults)
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [companyName, setCompanyName] = useState(currentUser.companyName || "Acme Global Technologies India Pvt Ltd");
-  const [contactName, setContactName] = useState(currentUser.name || "Client Representative");
-  const [companyDescription, setCompanyDescription] = useState(currentUser.companyDescription || "Enterprise venture studio building autonomous commerce protocols.");
-  const [industry, setIndustry] = useState(currentUser.domain || "Fintech & Autonomous Commerce");
-  const [country, setCountry] = useState(currentUser.country || "India");
-  const [stateName, setStateName] = useState(currentUser.state || "Karnataka");
-  const [city, setCity] = useState(currentUser.city || "Bengaluru");
-  const [address, setAddress] = useState(currentUser.address || "Block B, Tech Park, Outer Ring Road, Bellandur");
-  const [postalCode, setPostalCode] = useState(currentUser.postalCode || "560103");
+  const [companyName, setCompanyName] = useState(currentUser.companyName || "");
+  const [contactName, setContactName] = useState(currentUser.name || "");
+  const [companyDescription, setCompanyDescription] = useState(currentUser.companyDescription || currentUser.bio || "");
+  const [industry, setIndustry] = useState(currentUser.domain || "");
+  const [country, setCountry] = useState(currentUser.country || "");
+  const [stateName, setStateName] = useState(currentUser.state || "");
+  const [city, setCity] = useState(currentUser.city || "");
+  const [address, setAddress] = useState(currentUser.address || "");
+  const [postalCode, setPostalCode] = useState(currentUser.postalCode || "");
   const [profileSuccessMsg, setProfileSuccessMsg] = useState("");
+
+  // Client Contract Rating & Review State
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewText, setReviewText] = useState<string>("");
+  const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
+  const [reviewErrorMsg, setReviewErrorMsg] = useState<string>("");
+
+  useEffect(() => {
+    setCompanyName(currentUser.companyName || "");
+    setContactName(currentUser.name || "");
+    setCompanyDescription(currentUser.companyDescription || currentUser.bio || "");
+    setIndustry(currentUser.domain || "");
+    setCountry(currentUser.country || "");
+    setStateName(currentUser.state || "");
+    setCity(currentUser.city || "");
+    setAddress(currentUser.address || "");
+    setPostalCode(currentUser.postalCode || "");
+  }, [
+    currentUser.id,
+    currentUser.companyName,
+    currentUser.name,
+    currentUser.companyDescription,
+    currentUser.bio,
+    currentUser.domain,
+    currentUser.country,
+    currentUser.state,
+    currentUser.city,
+    currentUser.address,
+    currentUser.postalCode,
+  ]);
 
   // AI-Assisted Milestone Subtask Generator
   const handleGenerateAISubtasks = (milestoneIndex: number) => {
@@ -519,11 +597,12 @@ function ClientDashboardContent() {
     setPaypalErrorMsg(msg);
   }, []);
 
-  // Metrics Calculations for Dashboard Overview
-  const totalProjectsCount = projects.length;
-  const openProjectsCount = projects.filter((p) => p.status === "OPEN").length;
-  const inProgressProjectsCount = projects.filter((p) => p.status === "IN_PROGRESS").length;
-  const completedProjectsCount = projects.filter((p) => p.status === "COMPLETED").length;
+  // Strictly scope Client Dashboard projects to the logged-in client
+  const myProjects = projects.filter((p) => p.clientId === currentUser.id);
+  const totalProjectsCount = myProjects.length;
+  const openProjectsCount = myProjects.filter((p) => p.status === "OPEN").length;
+  const inProgressProjectsCount = myProjects.filter((p) => p.status === "IN_PROGRESS").length;
+  const completedProjectsCount = myProjects.filter((p) => p.status === "COMPLETED").length;
 
   // Milestone Calculations
   const totalPercentage = newMilestones.reduce((sum, m) => sum + (Number(m.percentage) || 0), 0);
@@ -817,8 +896,22 @@ function ClientDashboardContent() {
   const handleApproveMilestone = async (milestoneId: string) => {
     setPaypalErrorMsg("");
     try {
+      const targetMs = selectedContractForTab.milestones.find((m) => m.id === milestoneId);
       await approveMilestone(selectedContractForTab.id, milestoneId);
-      setActionSuccessMsg("Milestone approved! Payout released from escrow to talent.");
+      const payoutEmail =
+        selectedContractForTab.freelancerPayoutEmail ||
+        selectedContractForTab.freelancerEmail ||
+        "freelancer PayPal email";
+      addNotification({
+        userId: selectedContractForTab.freelancerId,
+        userRole: "FREELANCER",
+        event: "MILESTONE_APPROVED",
+        title: `Money Transferred via PayPal (${formatCurrency(targetMs?.paymentAmount || 0, selectedContractForTab.currency)})`,
+        description: `${currentUser.name} approved "${targetMs?.title || "Milestone"}" on ${selectedContractForTab.projectTitle}. Funds transferred to ${payoutEmail}.`,
+        linkHref: "/freelancer/dashboard?tab=contracts",
+        entityId: `payout-${selectedContractForTab.id}-${milestoneId}`,
+      });
+      setActionSuccessMsg("Milestone approved! Payout released via PayPal & freelancer notified.");
       setTimeout(() => setActionSuccessMsg(""), 3500);
       const txs = await apiClient.getPayPalTransactions(selectedContractForTab.id).catch(() => []);
       setPaypalTxs(txs);
@@ -887,6 +980,18 @@ function ClientDashboardContent() {
         );
       }
       const cid = overrideAuthModal.contractId;
+      const releasedContract = contracts.find((c) => c.id === cid);
+      if (releasedContract) {
+        addNotification({
+          userId: releasedContract.freelancerId,
+          userRole: "FREELANCER",
+          event: "MILESTONE_APPROVED",
+          title: `Upfront PayPal Transfer (${formatCurrency(overrideAuthModal.amount, overrideAuthModal.currency)})`,
+          description: `${currentUser.name} authorized an upfront payout for "${overrideAuthModal.title}" to ${releasedContract.freelancerPayoutEmail || releasedContract.freelancerEmail || "your PayPal email"}.`,
+          linkHref: "/freelancer/dashboard?tab=contracts",
+          entityId: `override-${cid}-${overrideAuthModal.milestoneId || "full"}`,
+        });
+      }
       setOverrideAuthModal(null);
       setOverridePassword("");
       setTimeout(() => setActionSuccessMsg(""), 5000);
@@ -948,30 +1053,66 @@ function ClientDashboardContent() {
     }
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateProfile({
+    await updateProfile({
       name: contactName.trim(),
       companyName: companyName.trim(),
+      bio: companyDescription.trim(),
       companyDescription: companyDescription.trim(),
       domain: industry.trim(),
+      country: country.trim(),
+      state: stateName.trim(),
+      city: city.trim(),
+      address: address.trim(),
+      postalCode: postalCode.trim(),
     });
     setIsEditingProfile(false);
     setProfileSuccessMsg("Organization profile updated successfully!");
     setTimeout(() => setProfileSuccessMsg(""), 3000);
   };
 
-  // Applications filtered for Inbox
-  const displayedApplications = localApplications.filter((app) => {
-    const matchesProject = filterByProjectId === "ALL" || app.projectId === filterByProjectId;
-    const matchesFilter =
-      proposalFilter === "ALL" ||
-      (proposalFilter === "AI_SHORTLIST" && app.aiRecommendation && app.aiRecommendation.fitScore >= 90);
-    return matchesProject && matchesFilter;
+  // Applications filtered by status (Ongoing / Completed / Rejected / All) & AI Shortlist
+  const isProjectCompleted = (projectId: string) => {
+    const p = projects.find((pr) => pr.id === projectId);
+    return p?.status === "COMPLETED" || completedContractProjectIds.has(projectId);
+  };
+  const statusScopedApplications = allClientApplications.filter((app) => {
+    if (filterByProjectId !== "ALL" && app.projectId !== filterByProjectId) return false;
+    const projDone = isProjectCompleted(app.projectId);
+    if (appStatusFilter === "ONGOING" && projDone) return false;
+    if (appStatusFilter === "COMPLETED" && !projDone) return false;
+    const q = appSearchQuery.trim().toLowerCase();
+    if (q) {
+      const proj = projects.find((p) => p.id === app.projectId);
+      const hay = `${app.freelancerName} ${app.freelancerDomain} ${app.coverLetter} ${proj?.title || ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
   });
+  const shortlistCandidates = statusScopedApplications.filter(
+    (app) => app.aiRecommendation && (app.aiRecommendation.isTopPick || app.aiRecommendation.fitScore >= 60)
+  );
+  const displayedApplications =
+    proposalFilter === "AI_SHORTLIST"
+      ? (shortlistCandidates.length > 0 ? shortlistCandidates : statusScopedApplications)
+          .slice()
+          .sort((a, b) => (b.aiRecommendation?.fitScore || 0) - (a.aiRecommendation?.fitScore || 0))
+          .slice(0, shortlistCandidates.length > 0 ? undefined : 3)
+      : statusScopedApplications;
+
+  // Group displayedApplications by projectId so client can clearly distinguish projects
+  const groupedApplicationsByProject = Array.from(
+    displayedApplications.reduce((map, app) => {
+      const list = map.get(app.projectId) || [];
+      list.push(app);
+      map.set(app.projectId, list);
+      return map;
+    }, new Map<string, Application[]>())
+  );
 
   // Active Project for Details View
-  const selectedProject = projects.find((p) => p.id === selectedProjectId) || projects[0];
+  const selectedProject = myProjects.find((p) => p.id === selectedProjectId) || myProjects[0];
 
   if (!isClientRole) {
     return (
@@ -1008,7 +1149,7 @@ function ClientDashboardContent() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* ── Top Header Banner ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-white border border-gray-100 shadow-xs">
         <div className="flex items-center gap-4">
@@ -1066,7 +1207,7 @@ function ClientDashboardContent() {
             }`}
           >
             <FolderKanban className="w-3.5 h-3.5" />
-            <span>My Projects ({projects.length})</span>
+            <span>My Projects ({myProjects.length})</span>
           </button>
 
           <button
@@ -1218,11 +1359,11 @@ function ClientDashboardContent() {
                   onClick={() => setActiveTab("projects")}
                   className="text-xs font-bold text-[#0070E0] hover:underline cursor-pointer"
                 >
-                  View All ({projects.length})
+                  View All ({myProjects.length})
                 </button>
               </CardHeader>
               <CardContent className="space-y-3 pt-3">
-                {projects.slice(0, 3).map((proj) => (
+                {myProjects.slice(0, 3).map((proj) => (
                   <div
                     key={proj.id}
                     className="p-3.5 rounded-xl border border-gray-100 hover:border-blue-200 transition-colors bg-gray-50/50 flex items-center justify-between gap-3 group"
@@ -1339,7 +1480,7 @@ function ClientDashboardContent() {
           </div>
 
           <div className="space-y-4">
-            {projects.map((proj) => {
+            {myProjects.map((proj) => {
               const statusBadgeVariant =
                 proj.status === "OPEN"
                   ? "paypal"
@@ -2068,6 +2209,26 @@ function ClientDashboardContent() {
                 <Edit3 className="w-3.5 h-3.5 mr-1" />
                 Edit Brief
               </Button>
+              {selectedProject.status === "OPEN" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={withdrawingProjectId === selectedProject.id}
+                  onClick={async () => {
+                    setWithdrawingProjectId(selectedProject.id);
+                    try {
+                      await withdrawProject(selectedProject.id);
+                      setActionSuccessMsg(`Project "${selectedProject.title}" has been withdrawn.`);
+                      setActiveTab("projects");
+                    } finally {
+                      setWithdrawingProjectId("");
+                    }
+                  }}
+                  className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50"
+                >
+                  {withdrawingProjectId === selectedProject.id ? "Withdrawing..." : "Withdraw Project"}
+                </Button>
+              )}
               <Button
                 variant="primary"
                 size="sm"
@@ -2155,25 +2316,47 @@ function ClientDashboardContent() {
                 </div>
               </div>
 
-              {/* Milestone execution timeline */}
+              {/* Milestone execution timeline (synced with active contract if assigned) */}
+              {(() => {
+                const linkedContract = myContracts.find((c) => c.projectId === selectedProject.id);
+                const liveMilestones = linkedContract?.milestones?.length
+                  ? linkedContract.milestones
+                  : selectedProject.milestones;
+                return (
               <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                    Milestone Schedule ({selectedProject.milestones.length} Steps)
+                    Milestone Schedule ({liveMilestones.length} Steps)
                   </h4>
-                  <span className="text-xs text-gray-500 font-mono">
-                    Escrow Ready • Step-by-Step Payouts
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 font-mono">
+                      {linkedContract ? `Contract #${linkedContract.id} • ${linkedContract.escrowStatus}` : "Escrow Ready • Step-by-Step Payouts"}
+                    </span>
+                    {linkedContract && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => {
+                          setSelectedContractId(linkedContract.id);
+                          setActiveTab("contracts");
+                        }}
+                      >
+                        Manage Live Contract
+                        <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-3">
-                  {selectedProject.milestones.map((ms) => {
+                  {liveMilestones.map((ms) => {
                     const statusInfo = getMilestoneStatusInfo(ms.status);
                     return (
                       <div
                         key={ms.id}
                         className={`p-4 rounded-2xl border transition-all ${
-                          ms.status === "ACTIVE"
+                          ms.status === "ACTIVE" || ms.status === "SUBMITTED"
                             ? "border-[#0070E0] bg-blue-50/20 ring-1 ring-[#0070E0]"
                             : ms.status === "RELEASED"
                             ? "border-emerald-200 bg-emerald-50/20"
@@ -2203,6 +2386,8 @@ function ClientDashboardContent() {
                   })}
                 </div>
               </div>
+                );
+              })()}
             </CardContent>
           </Card>
         </div>
@@ -2221,30 +2406,80 @@ function ClientDashboardContent() {
               </p>
             </div>
 
-            {/* Filter Toggle: All vs AI Shortlist */}
-            <div className="flex items-center gap-1.5 p-1 bg-gray-50 rounded-full border border-gray-200">
-              <button
-                onClick={() => setProposalFilter("ALL")}
-                className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
-                  proposalFilter === "ALL"
-                    ? "bg-white text-[#003087] shadow-sm ring-1 ring-gray-200"
-                    : "text-gray-500 hover:text-gray-900"
-                }`}
-              >
-                All Applicants ({localApplications.length})
-              </button>
-              <button
-                onClick={() => setProposalFilter("AI_SHORTLIST")}
-                className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
-                  proposalFilter === "AI_SHORTLIST"
-                    ? "bg-white text-purple-900 shadow-sm ring-1 ring-gray-200"
-                    : "text-gray-500 hover:text-gray-900"
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                AI Shortlist
-              </button>
+            {/* Filter Toggles: Status (Ongoing / Completed / All) & AI Shortlist */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 p-1 bg-gray-50 rounded-full border border-gray-200">
+                {(
+                  [
+                    { id: "ONGOING", label: "Ongoing" },
+                    { id: "COMPLETED", label: "Completed" },
+                    { id: "ALL", label: "All" },
+                  ] as const
+                ).map((st) => (
+                  <button
+                    key={st.id}
+                    onClick={() => setAppStatusFilter(st.id)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                      appStatusFilter === st.id
+                        ? "bg-white text-[#003087] shadow-sm ring-1 ring-gray-200"
+                        : "text-gray-500 hover:text-gray-900"
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1.5 p-1 bg-gray-50 rounded-full border border-gray-200">
+                <button
+                  onClick={() => setProposalFilter("ALL")}
+                  className={`px-3.5 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                    proposalFilter === "ALL"
+                      ? "bg-white text-[#003087] shadow-sm ring-1 ring-gray-200"
+                      : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  All ({statusScopedApplications.length})
+                </button>
+                <button
+                  onClick={() => setProposalFilter("AI_SHORTLIST")}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                    proposalFilter === "AI_SHORTLIST"
+                      ? "bg-white text-purple-900 shadow-sm ring-1 ring-gray-200"
+                      : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  AI Shortlist
+                </button>
+              </div>
             </div>
+          </div>
+
+          {/* Search & Project Filter Bar */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search applicants by name, project title, domain, or cover letter..."
+                value={appSearchQuery}
+                onChange={(e) => setAppSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 bg-white text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#0070E0]/30"
+              />
+            </div>
+            <select
+              value={filterByProjectId}
+              onChange={(e) => setFilterByProjectId(e.target.value)}
+              className="px-3.5 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-700"
+            >
+              <option value="ALL">All Projects</option>
+              {myProjects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
           </div>
 
           {acceptErrorMsg && (
@@ -2269,8 +2504,34 @@ function ClientDashboardContent() {
             </div>
           )}
 
-          <div className="space-y-4">
-            {displayedApplications.map((app) => (
+          <div className="space-y-6">
+            {groupedApplicationsByProject.map(([projId, projApps]) => {
+              const proj = projects.find((p) => p.id === projId);
+              return (
+                <div key={projId} className="space-y-3 p-4 rounded-3xl bg-gray-50/70 border border-gray-200/80">
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                    <div className="flex items-center gap-2">
+                      <FolderKanban className="w-4 h-4 text-[#0070E0]" />
+                      <h3 className="text-sm font-extrabold text-[#003087]">
+                        {proj?.title || `Project #${projId}`}
+                      </h3>
+                      {proj?.domain && (
+                        <Badge variant="paypal" size="sm">{proj.domain}</Badge>
+                      )}
+                      {proj?.status && (
+                        <Badge variant={proj.status === "COMPLETED" ? "success" : "neutral"} size="sm">
+                          {proj.status}
+                        </Badge>
+                      )}
+                    </div>
+                    <span className="text-xs font-bold text-gray-500">
+                      {projApps.length} Applicant{projApps.length === 1 ? "" : "s"}
+                      {proj ? ` • Budget: ${formatCurrency(proj.totalBudget, proj.currency)}` : ""}
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {projApps.map((app) => (
               <Card key={app.id} className="border-gray-100 card-hover bg-white">
                 <CardHeader className="pb-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2387,7 +2648,11 @@ function ClientDashboardContent() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
 
             {displayedApplications.length === 0 && (
               <div className="p-12 text-center text-gray-500 bg-white rounded-2xl border border-gray-100">
@@ -2544,12 +2809,36 @@ function ClientDashboardContent() {
                         Override &amp; Pay Full Upfront
                       </Button>
                     )}
+                  {selectedContractForTab.escrowStatus !== "COMPLETED" &&
+                    selectedContractForTab.escrowStatus !== "REFUNDED" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const held = selectedContractForTab.heldInEscrowAmount || 0;
+                          setEarlyTalentShare(String(Math.round(held * 0.5)));
+                          setEarlyReason("");
+                          setEarlyError("");
+                          setEarlySettleModalOpen(true);
+                        }}
+                        className="border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold"
+                      >
+                        End Early / Settle
+                      </Button>
+                    )}
                   <Link
-                    href={`/client/disputes/${selectedContractForTab.id}`}
+                    href={`/messages?contractId=${selectedContractForTab.id}`}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-50 hover:bg-blue-100 text-[#0070E0] border border-blue-200 transition-colors shadow-2xs"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-[#0070E0]" />
+                    <span>Messages</span>
+                  </Link>
+                  <Link
+                    href={`/disputes?contractId=${selectedContractForTab.id}`}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-2xs"
                   >
                     <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Dispute Resolution Hub</span>
+                    <span>Dispute Resolution</span>
                   </Link>
                 </div>
               {/* Financial Balances */}
@@ -2861,11 +3150,17 @@ function ClientDashboardContent() {
                                   </span>
                                   <span className="text-[10px] text-purple-600 font-normal">Advisory Only</span>
                                 </div>
-                                <ul className="text-[11px] text-purple-800 space-y-0.5 pt-1">
+                                <ul className="text-[11px] text-purple-800 space-y-1 pt-1">
                                   {ms.submission.aiVerificationReport.checklist.map((item, idx) => (
-                                    <li key={idx} className="flex items-center gap-1">
-                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                      <span>{item.criterion}: {item.evidenceNotes}</span>
+                                    <li key={idx} className="flex items-start gap-1.5">
+                                      {item.passed ? (
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                                      ) : (
+                                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                                      )}
+                                      <span className={item.passed ? "text-purple-900" : "text-amber-800"}>
+                                        {item.criterion}: {item.evidenceNotes}
+                                      </span>
                                     </li>
                                   ))}
                                 </ul>
@@ -2974,6 +3269,99 @@ function ClientDashboardContent() {
                 </div>
               )}
 
+              {/* Client Rating & Review for Completed Contracts */}
+              {selectedContractForTab.escrowStatus === "COMPLETED" && (
+                <div className="p-5 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Award className="w-5 h-5 text-amber-600" />
+                      <h4 className="text-sm font-extrabold text-gray-900">
+                        Rate &amp; Review {selectedContractForTab.freelancerName}
+                      </h4>
+                    </div>
+                    {selectedContractForTab.clientRating && (
+                      <Badge variant="success" size="sm">
+                        Rated {selectedContractForTab.clientRating}/5 ★
+                      </Badge>
+                    )}
+                  </div>
+
+                  {selectedContractForTab.clientRating ? (
+                    <div className="bg-white p-4 rounded-xl border border-amber-100 text-xs space-y-1.5">
+                      <div className="flex items-center gap-1 text-amber-500 font-bold text-sm">
+                        {"★".repeat(Math.round(selectedContractForTab.clientRating))}
+                        {"☆".repeat(Math.max(0, 5 - Math.round(selectedContractForTab.clientRating)))}
+                        <span className="text-xs text-gray-600 ml-2">
+                          ({selectedContractForTab.clientRating}/5)
+                        </span>
+                      </div>
+                      {selectedContractForTab.clientReview && (
+                        <p className="text-gray-700 leading-relaxed">
+                          &ldquo;{selectedContractForTab.clientReview}&rdquo;
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        setIsSubmittingReview(true);
+                        setReviewErrorMsg("");
+                        try {
+                          await submitReview(
+                            selectedContractForTab.id,
+                            reviewRating,
+                            reviewText.trim() || undefined
+                          );
+                          setReviewText("");
+                          setActionSuccessMsg("Thank you! Your rating and review have been saved to the freelancer's Trust Scorecard.");
+                          setTimeout(() => setActionSuccessMsg(""), 4000);
+                        } catch (err: any) {
+                          setReviewErrorMsg(err?.message || "Failed to submit rating.");
+                        } finally {
+                          setIsSubmittingReview(false);
+                        }
+                      }}
+                      className="space-y-3 bg-white p-4 rounded-xl border border-amber-100"
+                    >
+                      {reviewErrorMsg && (
+                        <p className="text-xs text-rose-600 font-semibold">{reviewErrorMsg}</p>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-700">Star Rating:</span>
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() => setReviewRating(star)}
+                              className={`text-xl leading-none cursor-pointer transition-transform hover:scale-110 ${
+                                star <= reviewRating ? "text-amber-500" : "text-gray-300"
+                              }`}
+                            >
+                              ★
+                            </button>
+                          ))}
+                        </div>
+                        <span className="text-xs text-gray-500 ml-1">({reviewRating}/5)</span>
+                      </div>
+                      <Textarea
+                        label="Review Feedback (Optional)"
+                        rows={2}
+                        placeholder="Share how the freelancer performed on quality, communication, and deadlines..."
+                        value={reviewText}
+                        onChange={(e) => setReviewText(e.target.value)}
+                      />
+                      <div className="flex justify-end">
+                        <Button type="submit" variant="primary" size="sm" isLoading={isSubmittingReview}>
+                          Submit Rating &amp; Review
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
+
               {/* Direct Project Discussion with Assigned Talent */}
               <ContractChatPanel
                 contractId={selectedContractForTab.id}
@@ -3027,15 +3415,21 @@ function ClientDashboardContent() {
                 <div className="space-y-4 text-xs">
                   <div>
                     <span className="font-semibold text-gray-700 block mb-1">Company Description:</span>
-                    <p className="text-gray-600 leading-relaxed bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                      {currentUser.companyDescription || "Enterprise venture studio building autonomous commerce protocols."}
-                    </p>
+                    {currentUser.companyDescription || currentUser.bio ? (
+                      <p className="text-gray-600 leading-relaxed bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                        {currentUser.companyDescription || currentUser.bio}
+                      </p>
+                    ) : (
+                      <p className="text-gray-400 italic bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                        No company description added yet. Click Edit Profile to add details.
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <span className="font-semibold text-gray-700 block mb-1">Primary Contact:</span>
-                      <span className="text-gray-800 font-bold">{contactName}</span>
+                      <span className="text-gray-800 font-bold">{contactName || currentUser.name}</span>
                     </div>
                     <div>
                       <span className="font-semibold text-gray-700 block mb-1">Business Email:</span>
@@ -3043,55 +3437,63 @@ function ClientDashboardContent() {
                     </div>
                   </div>
 
-                  {/* Client Location & Registered Business Address */}
-                  <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#003087]">
-                        <MapPin className="w-4 h-4 text-[#0070E0]" />
-                        <span>Registered Business Location</span>
+                  {/* Client Location & Registered Business Address (only if provided) */}
+                  {city || stateName || country || address ? (
+                    <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-[#003087]">
+                          <MapPin className="w-4 h-4 text-[#0070E0]" />
+                          <span>Business Location</span>
+                        </div>
                       </div>
-                      <Badge variant="warning" size="sm">
-                        Address Provided (Pending Independent Verification)
-                      </Badge>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                      <div>
-                        <span className="text-gray-400 block font-medium">City:</span>
-                        <strong className="text-gray-800">{city}</strong>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        {city && (
+                          <div>
+                            <span className="text-gray-400 block font-medium">City:</span>
+                            <strong className="text-gray-800">{city}</strong>
+                          </div>
+                        )}
+                        {stateName && (
+                          <div>
+                            <span className="text-gray-400 block font-medium">State / Province:</span>
+                            <strong className="text-gray-800">{stateName}</strong>
+                          </div>
+                        )}
+                        {country && (
+                          <div>
+                            <span className="text-gray-400 block font-medium">Country:</span>
+                            <strong className="text-gray-800">{country}</strong>
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <span className="text-gray-400 block font-medium">State / Province:</span>
-                        <strong className="text-gray-800">{stateName}</strong>
-                      </div>
-                      <div>
-                        <span className="text-gray-400 block font-medium">Country:</span>
-                        <strong className="text-gray-800">{country}</strong>
-                      </div>
-                    </div>
 
-                    <div className="pt-2 border-t border-gray-200 text-xs">
-                      <span className="text-gray-400 block font-medium">Complete Business Address:</span>
-                      <p className="text-gray-700 mt-0.5 font-medium">
-                        {address} {postalCode ? "(" + postalCode + ")" : ""}
-                      </p>
-                      <p className="text-[11px] text-gray-400 mt-1 italic">
-                        Transparently shared with evaluating freelancers. Not publicly indexed to unauthenticated web visitors.
-                      </p>
+                      {address && (
+                        <div className="pt-2 border-t border-gray-200 text-xs">
+                          <span className="text-gray-400 block font-medium">Business Address:</span>
+                          <p className="text-gray-700 mt-0.5 font-medium">
+                            {address} {postalCode ? `(${postalCode})` : ""}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  ) : (
+                    <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-gray-400 italic">
+                      No business address added (optional — click Edit Profile to add one).
+                    </div>
+                  )}
 
                   <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span><strong>Verified Escrow Client:</strong> Milestone disbursements verified through PayPal sandbox API.</span>
+                    <span><strong>Escrow Account:</strong> Milestone disbursements powered by PayPal Sandbox API.</span>
                   </div>
                 </div>
               ) : (
                 <form onSubmit={handleSaveProfile} className="space-y-4 pt-2">
                   <Input
                     label="Company / Brand Name"
-                    required
                     value={companyName}
+                    placeholder="e.g. Acme Studio"
                     onChange={(e) => setCompanyName(e.target.value)}
                   />
 
@@ -3104,15 +3506,15 @@ function ClientDashboardContent() {
 
                   <Input
                     label="Industry / Domain"
-                    required
                     value={industry}
+                    placeholder="e.g. Fintech, SaaS, E-Commerce"
                     onChange={(e) => setIndustry(e.target.value)}
                   />
 
                   <Textarea
                     label="Company Description"
-                    required
                     rows={3}
+                    placeholder="Describe your company or project focus..."
                     value={companyDescription}
                     onChange={(e) => setCompanyDescription(e.target.value)}
                   />
@@ -3182,19 +3584,19 @@ function ClientDashboardContent() {
         </div>
       )}
 
-      {/* ── MODAL: COMPREHENSIVE CANDIDATE DOSSIER & CV EVALUATION ── */}
+      {/* ── MODAL: FULL-SCREEN CANDIDATE DOSSIER & CV PREVIEW ── */}
       {selectedApplicantForReview && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden my-8 animate-slide-up">
-            {/* Modal Header */}
-            <div className="p-6 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border-b border-gray-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5">
+          <div className="w-[96vw] max-w-7xl h-[92vh] bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col animate-slide-up">
+            {/* Top Dossier Header */}
+            <div className="px-6 py-4 bg-white border-b border-gray-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-[#003087] text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                <div className="w-11 h-11 rounded-2xl bg-[#003087] text-white flex items-center justify-center font-bold text-lg shadow-xs">
                   {selectedApplicantForReview.freelancerName.charAt(0).toUpperCase()}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold text-[#003087]">
+                    <h3 className="text-lg font-extrabold text-[#003087]">
                       {selectedApplicantForReview.freelancerName}
                     </h3>
                     <Badge variant="paypal" size="sm">
@@ -3206,184 +3608,215 @@ function ClientDashboardContent() {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedApplicantForReview(null)}
-                className="text-gray-400 hover:text-gray-600 p-2 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                  Applied: {formatDate(selectedApplicantForReview.createdAt)}
+                </span>
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-[#003087] border border-blue-200">
+                  Bid: {formatCurrency(selectedApplicantForReview.bidAmount, selectedApplicantForReview.currency)}
+                </span>
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  {selectedApplicantForReview.trustScorecard.rating ?? "New"} ★ ({selectedApplicantForReview.trustScorecard.onTimeDeliveryRate ?? 100}% on-time)
+                </span>
+                <button
+                  onClick={() => setSelectedApplicantForReview(null)}
+                  className="text-gray-400 hover:text-gray-700 p-2 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
-              {/* Proposal & Bid Highlights */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-gray-50 border border-gray-100 text-xs">
-                <div>
-                  <span className="text-gray-400 block font-medium">Proposed Bid:</span>
-                  <span className="text-base font-extrabold text-[#003087]">
-                    {formatCurrency(selectedApplicantForReview.bidAmount, selectedApplicantForReview.currency)}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-400 block font-medium">Estimated Delivery:</span>
-                  <span className="text-base font-bold text-emerald-600">
-                    {selectedApplicantForReview.estimatedDeliveryDays || 14} Days
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-400 block font-medium">Trust Score:</span>
-                  <span className="text-base font-bold text-gray-900">
-                    {selectedApplicantForReview.trustScorecard.rating} ★ ({selectedApplicantForReview.trustScorecard.onTimeDeliveryRate}% on-time)
-                  </span>
-                </div>
-              </div>
-
-              {/* Cover Letter */}
-              <div>
-                <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
-                  Application Cover Letter
-                </h4>
-                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 text-xs text-gray-700 leading-relaxed">
-                  {selectedApplicantForReview.coverLetter}
-                </div>
-              </div>
-
-              {/* Technical Skills & Expertise */}
-              <div>
-                <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
-                  Technical Expertise &amp; Verified Skills
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {(selectedApplicantForReview.freelancerProfile?.skills || [
-                    "React", "Next.js", "TypeScript", "Tailwind CSS", "FastAPI", "PostgreSQL"
-                  ]).map((skill, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-[#003087] border border-blue-200"
-                    >
-                      {skill}
+            {/* Scrollable Body: Full-Width CV Viewport + Two-Column Bottom Summary */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 bg-gray-50/40">
+              {/* Main Full-Width CV Preview */}
+              <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-xs">
+                <div className="px-4 py-2.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <FileCheck className="w-4 h-4 text-sky-400" />
+                    <span>
+                      {selectedApplicantForReview.freelancerProfile?.cvFile?.name || "No CV Document Attached"}
                     </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Work Experience & Education */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2">
-                  <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <Briefcase className="w-3.5 h-3.5 text-[#0070E0]" />
-                    Work Experience ({selectedApplicantForReview.freelancerProfile?.experienceYears || 6} Years)
-                  </h5>
-                  <ul className="text-xs text-gray-600 space-y-1.5 list-disc list-inside">
-                    {(selectedApplicantForReview.freelancerProfile?.experience || [
-                      "Lead Frontend Engineer at Web3 FinTech (2023 - Present)",
-                      "Senior Software Developer at CloudScale Systems (2021 - 2023)"
-                    ]).map((exp, idx) => (
-                      <li key={idx}>{exp}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2">
-                  <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <Award className="w-3.5 h-3.5 text-[#0070E0]" />
-                    Education &amp; Credentials
-                  </h5>
-                  <ul className="text-xs text-gray-600 space-y-1.5 list-disc list-inside">
-                    {(selectedApplicantForReview.freelancerProfile?.education || [
-                      "B.Tech in Computer Science, IIT Bombay (2018-2022)"
-                    ]).map((edu, idx) => (
-                      <li key={idx}>{edu}</li>
-                    ))}
-                    {(selectedApplicantForReview.freelancerProfile?.certifications || [
-                      "Certified Fintech Security Practitioner (2024)"
-                    ]).map((cert, idx) => (
-                      <li key={idx} className="text-emerald-700 font-medium">
-                        Cert: {cert}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Uploaded CV & Document View */}
-              <div className="p-4 rounded-2xl bg-blue-50/40 border border-blue-100 space-y-3">
-                <div className="flex items-center justify-between">
+                    {selectedApplicantForReview.freelancerProfile?.cvFile?.size ? (
+                      <span className="text-slate-400 font-normal">
+                        ({Math.max(1, Math.round(selectedApplicantForReview.freelancerProfile.cvFile.size / 1024))} KB)
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="flex items-center gap-2">
-                    <FileCheck className="w-4 h-4 text-[#0070E0]" />
-                    <span className="text-xs font-bold text-[#003087]">Uploaded CV / Resume Document</span>
+                    {selectedApplicantForReview.freelancerProfile?.cvFile?.url && (
+                      <a
+                        href={selectedApplicantForReview.freelancerProfile.cvFile.url}
+                        download={selectedApplicantForReview.freelancerProfile.cvFile.name}
+                        className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                      >
+                        Download
+                      </a>
+                    )}
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                    CV Attached &amp; Validated
-                  </span>
                 </div>
 
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white p-3 rounded-xl border border-blue-100 text-xs">
-                  <div>
-                    <span className="font-bold text-gray-800 block">
-                      {selectedApplicantForReview.freelancerProfile?.cvFile?.name || "Vachan_Singh_Senior_FullStack_CV.pdf"}
-                    </span>
-                    <span className="text-[11px] text-gray-400">
-                      Uploaded {formatDate(selectedApplicantForReview.freelancerProfile?.cvFile?.uploadedAt || selectedApplicantForReview.createdAt)} • 148 KB
-                    </span>
+                {selectedApplicantForReview.freelancerProfile?.cvFile ? (
+                  (() => {
+                    const cv = selectedApplicantForReview.freelancerProfile!.cvFile!;
+                    const lowerName = (cv.name || "").toLowerCase();
+                    const rawText = (cv.extractedInfo as any)?.rawText as string | undefined;
+                    if (cv.url && (lowerName.endsWith(".pdf") || cv.url.startsWith("data:application/pdf"))) {
+                      const pdfSrc = cv.url.includes("#") ? cv.url : `${cv.url}#view=FitH&zoom=page-width`;
+                      return (
+                        <iframe
+                          src={pdfSrc}
+                          title={cv.name}
+                          className="w-full h-[46vh] min-h-[380px] bg-slate-800"
+                        />
+                      );
+                    }
+                    if (cv.url && /\.(png|jpe?g|webp|gif)$/i.test(lowerName)) {
+                      return (
+                        <div className="bg-slate-900 flex justify-center p-4">
+                          <img
+                            src={cv.url}
+                            alt={cv.name}
+                            className="max-h-[46vh] object-contain rounded-lg"
+                          />
+                        </div>
+                      );
+                    }
+                    if (rawText) {
+                      return (
+                        <pre className="w-full max-h-[46vh] overflow-y-auto whitespace-pre-wrap p-6 bg-white text-xs text-gray-800 font-sans leading-relaxed">
+                          {rawText}
+                        </pre>
+                      );
+                    }
+                    return (
+                      <div className="p-8 text-center text-xs text-gray-500">
+                        Inline preview unavailable for this file format. Use the Download button above to inspect.
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <div className="p-10 text-center text-xs text-gray-500">
+                    The applicant did not attach a CV file to this proposal.
                   </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-8 bg-blue-50 text-[#0070E0] border-blue-200 hover:bg-blue-100"
-                    onClick={() => setShowCVPreviewModal(true)}
-                  >
-                    <Eye className="w-3.5 h-3.5 mr-1" />
-                    View / Inspect CV
-                  </Button>
-                </div>
-
-                {/* CV Extracted Summary */}
-                {selectedApplicantForReview.freelancerProfile?.cvFile?.extractedInfo?.summary && (
-                  <p className="text-xs text-gray-600 bg-white p-3 rounded-xl border border-gray-100 leading-relaxed">
-                    <strong>CV Executive Summary:</strong> {selectedApplicantForReview.freelancerProfile.cvFile.extractedInfo.summary}
-                  </p>
                 )}
               </div>
 
-              {/* AI-Assisted Candidate Analysis (Demo Advisory) */}
-              <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-200 text-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 font-bold text-purple-900">
-                    <Sparkles className="w-4 h-4 text-purple-600" />
-                    <span>AI-Assisted Candidate Analysis</span>
+              {/* Bottom Two-Column Cards: Candidate Summary & Credentials vs AI-Assisted Analysis */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Left Card: Candidate Summary, Cover Letter, Skills & Education */}
+                <div className="p-5 rounded-2xl bg-white border border-gray-200 space-y-4 text-xs shadow-2xs">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
+                    <h4 className="font-extrabold text-sm text-[#003087]">Candidate Summary &amp; Proposal</h4>
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600">
+                      {selectedApplicantForReview.coverLetter.trim().split(/\s+/).filter(Boolean).length} Words
+                    </span>
                   </div>
-                  <Badge variant="inReview" size="sm">
-                    DEMO ADVISORY
-                  </Badge>
+
+                  <p className="text-gray-700 leading-relaxed bg-gray-50 p-3.5 rounded-xl border border-gray-100">
+                    {selectedApplicantForReview.coverLetter}
+                  </p>
+
+                  {selectedApplicantForReview.freelancerProfile?.skills?.length ? (
+                    <div>
+                      <span className="font-bold text-gray-700 block mb-1.5">Skills</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedApplicantForReview.freelancerProfile.skills.map((skill, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-[#003087] border border-blue-200"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {(selectedApplicantForReview.freelancerProfile?.education?.length ||
+                    selectedApplicantForReview.freelancerProfile?.experience?.length) ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      {selectedApplicantForReview.freelancerProfile?.education?.length ? (
+                        <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
+                          <span className="font-bold text-gray-800 block mb-1">Education &amp; Credentials</span>
+                          <ul className="list-disc list-inside text-gray-600 space-y-1">
+                            {selectedApplicantForReview.freelancerProfile.education.map((edu, idx) => (
+                              <li key={idx}>{edu}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {selectedApplicantForReview.freelancerProfile?.experience?.length ? (
+                        <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
+                          <span className="font-bold text-gray-800 block mb-1">Experience</span>
+                          <ul className="list-disc list-inside text-gray-600 space-y-1">
+                            {selectedApplicantForReview.freelancerProfile.experience.map((exp, idx) => (
+                              <li key={idx}>{exp}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-[11px]">
-                  <div className="bg-white p-2.5 rounded-xl border border-purple-100">
-                    <span className="font-bold text-emerald-700 block mb-1">Skills Matching Project:</span>
-                    <p className="text-gray-600">
-                      Next.js 14, TypeScript, Tailwind CSS, Escrow architecture, and responsive UI engineering match 98% of project requirements.
-                    </p>
+                {/* Right Card: AI-Assisted Candidate Analysis */}
+                <div className="p-5 rounded-2xl bg-white border border-purple-200 space-y-4 text-xs shadow-2xs">
+                  <div className="flex items-center justify-between border-b border-purple-100 pb-2.5">
+                    <div className="flex items-center gap-1.5 font-extrabold text-sm text-purple-900">
+                      <Sparkles className="w-4 h-4 text-purple-600" />
+                      <span>AI-Assisted Candidate Analysis</span>
+                    </div>
+                    {selectedApplicantForReview.aiRecommendation && (
+                      <div className="flex items-center gap-1.5">
+                        {selectedApplicantForReview.aiRecommendation.isTopPick && (
+                          <Badge variant="success" size="sm">AI Shortlisted</Badge>
+                        )}
+                        <Badge variant="inReview" size="sm">
+                          {selectedApplicantForReview.aiRecommendation.fitScore}% Fit Score
+                        </Badge>
+                      </div>
+                    )}
                   </div>
-                  <div className="bg-white p-2.5 rounded-xl border border-purple-100">
-                    <span className="font-bold text-amber-700 block mb-1">Identified Focus Areas:</span>
-                    <p className="text-gray-600">
-                      No critical skill gaps identified. Candidate exhibits top on-time delivery (98%) and clean code certifications.
-                    </p>
-                  </div>
+
+                  {selectedApplicantForReview.aiRecommendation ? (
+                    <div className="space-y-3">
+                      <p className="text-gray-700 leading-relaxed bg-purple-50/50 p-3.5 rounded-xl border border-purple-100">
+                        {selectedApplicantForReview.aiRecommendation.summaryExplanation}
+                      </p>
+
+                      {((selectedApplicantForReview.aiRecommendation as any).matchedSkills?.length > 0 ||
+                        (selectedApplicantForReview.aiRecommendation as any).missingSkills?.length > 0) && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {((selectedApplicantForReview.aiRecommendation as any).matchedSkills || []).map((sk: string) => (
+                            <span key={`m-${sk}`} className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              ✓ {sk}
+                            </span>
+                          ))}
+                          {((selectedApplicantForReview.aiRecommendation as any).missingSkills || []).map((sk: string) => (
+                            <span key={`x-${sk}`} className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                              Missing: {sk}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 italic">No AI analysis available for this application.</p>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Modal Footer Actions */}
-            <div className="p-6 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+            <div className="px-6 py-4 bg-white border-t border-gray-200 flex items-center justify-between shrink-0">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setSelectedApplicantForReview(null)}
               >
+                <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
                 Close Dossier
               </Button>
 
@@ -3421,12 +3854,12 @@ function ClientDashboardContent() {
       {/* ── MODAL: CV DOCUMENT VIEWER ── */}
       {showCVPreviewModal && selectedApplicantForReview && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden space-y-4 p-6 animate-slide-up">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden space-y-4 p-6 animate-slide-up max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3 shrink-0">
               <div className="flex items-center gap-2">
                 <FileCheck className="w-5 h-5 text-[#0070E0]" />
                 <h3 className="font-bold text-base text-gray-900">
-                  CV Document: {selectedApplicantForReview.freelancerProfile?.cvFile?.name || "Vachan_Singh_Senior_FullStack_CV.pdf"}
+                  CV Document: {selectedApplicantForReview.freelancerProfile?.cvFile?.name || "No CV Uploaded"}
                 </h3>
               </div>
               <button
@@ -3437,42 +3870,105 @@ function ClientDashboardContent() {
               </button>
             </div>
 
-            <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 space-y-4 text-xs font-mono">
-              <div className="border-b border-gray-200 pb-3">
-                <h2 className="text-base font-bold text-gray-900 font-sans">
-                  {selectedApplicantForReview.freelancerName}
-                </h2>
-                <p className="text-gray-500 font-sans">
-                  {selectedApplicantForReview.freelancerDomain} • 6 Years Professional Experience
-                </p>
-              </div>
+            <div className="overflow-y-auto space-y-4 flex-1">
+              {(() => {
+                const cv = selectedApplicantForReview.freelancerProfile?.cvFile;
+                if (!cv) return null;
+                const lowerName = (cv.name || "").toLowerCase();
+                const rawText = (cv.extractedInfo as any)?.rawText as string | undefined;
+                if (cv.url && (lowerName.endsWith(".pdf") || cv.url.startsWith("data:application/pdf"))) {
+                  return (
+                    <iframe
+                      src={cv.url}
+                      title={cv.name}
+                      className="w-full h-[60vh] rounded-2xl border border-gray-200 bg-gray-50"
+                    />
+                  );
+                }
+                if (cv.url && /\.(png|jpe?g|webp|gif)$/i.test(lowerName)) {
+                  return (
+                    <img
+                      src={cv.url}
+                      alt={cv.name}
+                      className="w-full max-h-[60vh] object-contain rounded-2xl border border-gray-200 bg-gray-50"
+                    />
+                  );
+                }
+                if (rawText) {
+                  return (
+                    <pre className="w-full max-h-[60vh] overflow-y-auto whitespace-pre-wrap p-5 rounded-2xl border border-gray-200 bg-gray-50 text-xs text-gray-800 font-sans leading-relaxed">
+                      {rawText}
+                    </pre>
+                  );
+                }
+                return null;
+              })()}
 
-              <div>
-                <span className="font-bold text-[#003087] block mb-1">CORE TECHNICAL COMPETENCIES:</span>
-                <p className="text-gray-700">
-                  Next.js, React, TypeScript, Tailwind CSS, FastAPI, Python, PostgreSQL, Smart Contracts, Autonomous Escrow Architecture
-                </p>
-              </div>
+              <div className="p-5 bg-gray-50 rounded-2xl border border-gray-100 space-y-3 text-xs">
+                <div className="border-b border-gray-200 pb-3">
+                  <h2 className="text-base font-bold text-gray-900">
+                    {selectedApplicantForReview.freelancerName}
+                  </h2>
+                  <p className="text-gray-500">
+                    {selectedApplicantForReview.freelancerDomain}
+                    {selectedApplicantForReview.freelancerProfile?.experienceYears
+                      ? ` • ${selectedApplicantForReview.freelancerProfile.experienceYears} Years Experience`
+                      : ""}
+                  </p>
+                </div>
 
-              <div>
-                <span className="font-bold text-[#003087] block mb-1">CAREER MILESTONES:</span>
-                <p className="text-gray-700">
-                  • Lead Frontend Engineer (Web3 FinTech) - Multi-party milestone escrow contracts &amp; responsive fintech dashboards<br />
-                  • Senior Software Developer (CloudScale) - Micro-frontends &amp; high-assurance API integration
-                </p>
-              </div>
+                {selectedApplicantForReview.freelancerProfile?.cvFile?.extractedInfo?.summary && (
+                  <div>
+                    <span className="font-bold text-[#003087] block mb-1">CANDIDATE SUMMARY</span>
+                    <p className="text-gray-700">
+                      {selectedApplicantForReview.freelancerProfile.cvFile.extractedInfo.summary}
+                    </p>
+                  </div>
+                )}
 
-              <div>
-                <span className="font-bold text-[#003087] block mb-1">EDUCATION &amp; CERTIFICATIONS:</span>
-                <p className="text-gray-700">
-                  • Bachelor of Technology in Computer Science - IIT Bombay (CGPA 8.9/10)<br />
-                  • Certified Fintech Security Practitioner (FSI-2024)<br />
-                  • AWS Certified Solutions Architect - Associate
-                </p>
+                {selectedApplicantForReview.freelancerProfile?.skills?.length ? (
+                  <div>
+                    <span className="font-bold text-[#003087] block mb-1">SKILLS</span>
+                    <p className="text-gray-700">
+                      {selectedApplicantForReview.freelancerProfile.skills.join(", ")}
+                    </p>
+                  </div>
+                ) : null}
+
+                {selectedApplicantForReview.freelancerProfile?.experience?.length ? (
+                  <div>
+                    <span className="font-bold text-[#003087] block mb-1">EXPERIENCE</span>
+                    <ul className="text-gray-700 list-disc list-inside space-y-1">
+                      {selectedApplicantForReview.freelancerProfile.experience.map((exp, idx) => (
+                        <li key={idx}>{exp}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {selectedApplicantForReview.freelancerProfile?.education?.length ? (
+                  <div>
+                    <span className="font-bold text-[#003087] block mb-1">EDUCATION</span>
+                    <ul className="text-gray-700 list-disc list-inside space-y-1">
+                      {selectedApplicantForReview.freelancerProfile.education.map((edu, idx) => (
+                        <li key={idx}>{edu}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 shrink-0">
+              {selectedApplicantForReview.freelancerProfile?.cvFile?.url && (
+                <a
+                  href={selectedApplicantForReview.freelancerProfile.cvFile.url}
+                  download={selectedApplicantForReview.freelancerProfile.cvFile.name}
+                  className="inline-flex items-center px-4 py-2 rounded-xl text-xs font-bold bg-[#0070E0] text-white hover:bg-[#005bb5]"
+                >
+                  Download CV
+                </a>
+              )}
               <Button variant="outline" size="sm" onClick={() => setShowCVPreviewModal(false)}>
                 Close Preview
               </Button>
@@ -3638,15 +4134,17 @@ function ClientDashboardContent() {
                     onError={handleSmartButtonsError}
                   />
                   {pendingEscrowCheckout.approvalUrl && (
-                    <button
+                    <Button
                       type="button"
+                      variant="primary"
+                      size="md"
                       onClick={() => {
                         window.location.href = pendingEscrowCheckout.approvalUrl!;
                       }}
-                      className="text-center text-[11px] font-semibold text-[#0070E0] hover:underline cursor-pointer"
+                      className="w-full bg-[#0070E0] hover:bg-[#003087] text-white font-bold"
                     >
-                      Or open PayPal Sandbox Checkout in full window →
-                    </button>
+                      Pay with PayPal Sandbox Checkout →
+                    </Button>
                   )}
                 </>
               ) : (
@@ -3686,6 +4184,96 @@ function ClientDashboardContent() {
             >
               I&apos;ll Fund Later from Active Contracts
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: EARLY CONTRACT SETTLEMENT ── */}
+      {earlySettleModalOpen && selectedContractForTab && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden p-6 space-y-4 animate-slide-up">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">End Project Early with Settlement</h3>
+                <p className="text-xs text-gray-500">
+                  Remaining Held Escrow: {formatCurrency(selectedContractForTab.heldInEscrowAmount, selectedContractForTab.currency)}
+                </p>
+              </div>
+              <button onClick={() => setEarlySettleModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {earlyError && (
+              <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 p-2.5 rounded-xl">{earlyError}</p>
+            )}
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const held = selectedContractForTab.heldInEscrowAmount || 0;
+                const talentAmt = Math.max(0, Number(earlyTalentShare) || 0);
+                if (talentAmt > held) {
+                  setEarlyError(`Freelancer share cannot exceed ${formatCurrency(held, selectedContractForTab.currency)}.`);
+                  return;
+                }
+                const refundAmt = Math.max(0, Number((held - talentAmt).toFixed(2)));
+                setIsSettlingEarly(true);
+                setEarlyError("");
+                try {
+                  await settleContractEarly(
+                    selectedContractForTab.id,
+                    talentAmt,
+                    refundAmt,
+                    earlyReason.trim() || "Early contract termination with mutual settlement"
+                  );
+                  setEarlySettleModalOpen(false);
+                  setActionSuccessMsg(
+                    `Contract #${selectedContractForTab.id} settled early (${formatCurrency(talentAmt, selectedContractForTab.currency)} to talent, ${formatCurrency(refundAmt, selectedContractForTab.currency)} refunded).`
+                  );
+                } catch (err: any) {
+                  setEarlyError(err?.message || "Failed to settle contract early.");
+                } finally {
+                  setIsSettlingEarly(false);
+                }
+              }}
+              className="space-y-3"
+            >
+              <Input
+                label={`Freelancer Payout Share (${selectedContractForTab.currency})`}
+                type="number"
+                min="0"
+                max={selectedContractForTab.heldInEscrowAmount || 0}
+                step="0.01"
+                value={earlyTalentShare}
+                onChange={(e) => setEarlyTalentShare(e.target.value)}
+              />
+              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-700 flex justify-between">
+                <span>Client Refund Amount:</span>
+                <strong>
+                  {formatCurrency(
+                    Math.max(0, (selectedContractForTab.heldInEscrowAmount || 0) - (Number(earlyTalentShare) || 0)),
+                    selectedContractForTab.currency
+                  )}
+                </strong>
+              </div>
+              <Textarea
+                label="Settlement Reason"
+                required
+                rows={2}
+                placeholder="Explain why the project is ending early..."
+                value={earlyReason}
+                onChange={(e) => setEarlyReason(e.target.value)}
+              />
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setEarlySettleModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" size="sm" isLoading={isSettlingEarly}>
+                  Confirm Early Settlement
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

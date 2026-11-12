@@ -262,6 +262,7 @@ class ApplicationCreateRequest(BaseModel):
     freelancer_id: Optional[str] = Field(None, alias="freelancerId")
     freelancer_name: Optional[str] = Field(None, alias="freelancerName")
     freelancer_domain: Optional[str] = Field(None, alias="freelancerDomain")
+    freelancer_profile: Optional[Dict[str, Any]] = Field(None, alias="freelancerProfile")
 
 
 class ApplicationResponse(BaseMarketplaceSchema):
@@ -278,4 +279,21 @@ class ApplicationResponse(BaseMarketplaceSchema):
     created_at: str = Field(..., serialization_alias="createdAt")
     trust_scorecard: TrustScorecardData = Field(..., serialization_alias="trustScorecard")
     ai_recommendation: Optional[Dict[str, Any]] = Field(None, serialization_alias="aiRecommendation")
+    freelancer_profile: Optional[Dict[str, Any]] = Field(None, serialization_alias="freelancerProfile")
+
+
+class MessageThreadSummary(BaseMarketplaceSchema):
+    """Unified inbox summary per contract conversation."""
+    contract_id: str = Field(..., serialization_alias="contractId")
+    project_title: str = Field(..., serialization_alias="projectTitle")
+    counterparty_name: str = Field(..., serialization_alias="counterpartyName")
+    counterparty_role: str = Field(..., serialization_alias="counterpartyRole")
+    counterparty_email: Optional[str] = Field(None, serialization_alias="counterpartyEmail")
+    escrow_status: EscrowStatus = Field(..., serialization_alias="escrowStatus")
+    total_budget: float = Field(..., serialization_alias="totalBudget")
+    currency: str
+    message_count: int = Field(0, serialization_alias="messageCount")
+    last_message: Optional[str] = Field(None, serialization_alias="lastMessage")
+    last_message_sender: Optional[str] = Field(None, serialization_alias="lastMessageSender")
+    last_message_at: Optional[str] = Field(None, serialization_alias="lastMessageAt")
 

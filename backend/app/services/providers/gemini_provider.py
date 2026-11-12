@@ -24,7 +24,10 @@ class GeminiProvider(BaseAIProvider):
         self.client: Optional[genai.Client] = None
         if self.api_key:
             try:
-                self.client = genai.Client(api_key=self.api_key)
+                self.client = genai.Client(
+                    api_key=self.api_key,
+                    http_options=types.HttpOptions(api_version="v1beta"),
+                )
                 logger.info(f"Gemini client initialized with model '{self.default_model}'")
             except Exception as e:
                 logger.warning(f"Failed to initialize Gemini client: {e}")

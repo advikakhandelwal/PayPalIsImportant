@@ -28,6 +28,11 @@ export const PayPalSmartButtons: React.FC<PayPalSmartButtonsProps> = ({
   onError,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onAuthorizedRef = useRef(onAuthorized);
+  const onErrorRef = useRef(onError);
+  onAuthorizedRef.current = onAuthorized;
+  onErrorRef.current = onError;
+
   const [sdkReady, setSdkReady] = useState(false);
   const [statusMsg, setStatusMsg] = useState("Loading PayPal Checkout...");
 
@@ -36,6 +41,7 @@ export const PayPalSmartButtons: React.FC<PayPalSmartButtonsProps> = ({
 
   useEffect(() => {
     let cancelled = false;
+    let buttonsInstance: any = null;
 
     async function loadSdkAndRender() {
       try {
@@ -50,56 +56,70 @@ export const PayPalSmartButtons: React.FC<PayPalSmartButtonsProps> = ({
         const existingScript = document.getElementById(scriptId) as HTMLScriptElement | null;
 
         const renderButtons = () => {
-          if (cancelled || !window.paypal || !containerRef.current) return;
+          if (cancelled || !window.paypal || !containerRef.current || !containerRef.current.isConnected) {
+            return;
+          }
           containerRef.current.innerHTML = "";
           setSdkReady(true);
-          setStatusMsg("");
 
-          window.paypal
-            .Buttons({
-              style: {
-                layout: "vertical",
-                color: "blue",
-                shape: "pill",
-                label: "pay",
-                height: 44,
-              },
-              createOrder: async () => {
-                const order = await apiClient.createPayPalEscrowOrder(contractId, {});
-                return order.orderId;
-              },
-              onApprove: async (data: { orderID: string }) => {
-                setStatusMsg("Authorizing & locking escrow funds...");
-                const authRes = await apiClient.authorizePayPalEscrow(contractId, {
-                  orderId: data.orderID,
-                });
-                onAuthorized({
-                  orderId: authRes.orderId || data.orderID,
-                  authorizationId: authRes.authorizationId,
-                  amount: authRes.heldInEscrowAmount,
-                  currency: authRes.currency,
-                });
-              },
-              onCancel: () => {
-                setStatusMsg("");
-                onError("PayPal checkout was cancelled.");
-              },
-              onError: (err: any) => {
-                setStatusMsg("");
-                onError(err?.message || "PayPal checkout encountered an error.");
-              },
-            })
-            .render(containerRef.current)
-            .catch((err: any) => {
+          const instance = window.paypal.Buttons({
+            style: {
+              layout: "vertical",
+              color: "blue",
+              shape: "pill",
+              label: "pay",
+              height: 44,
+            },
+            createOrder: async () => {
+              const order = await apiClient.createPayPalEscrowOrder(contractId, {});
+              return order.orderId;
+            },
+            onApprove: async (data: { orderID: string }) => {
+              setStatusMsg("Authorizing & locking escrow funds...");
+              const authRes = await apiClient.authorizePayPalEscrow(contractId, {
+                orderId: data.orderID,
+              });
+              onAuthorizedRef.current({
+                orderId: authRes.orderId || data.orderID,
+                authorizationId: authRes.authorizationId,
+                amount: authRes.heldInEscrowAmount,
+                currency: authRes.currency,
+              });
+            },
+            onCancel: () => {
               if (!cancelled) {
                 setStatusMsg("");
-                onError(err?.message || "Failed to render PayPal Smart Buttons.");
+                onErrorRef.current("PayPal checkout was cancelled.");
               }
+            },
+            onError: (err: any) => {
+              const msg = String(err?.message || err || "");
+              if (cancelled || msg.toLowerCase().includes("zoid destroyed")) return;
+              setStatusMsg("");
+              onErrorRef.current(msg || "PayPal checkout encountered an error.");
+            },
+          });
+
+          buttonsInstance = instance;
+          instance
+            .render(containerRef.current)
+            .then(() => {
+              if (!cancelled) setStatusMsg("");
+            })
+            .catch((err: any) => {
+              const msg = String(err?.message || err || "");
+              if (cancelled || msg.toLowerCase().includes("zoid destroyed")) return;
+              setStatusMsg("");
+              onErrorRef.current(msg || "Failed to render PayPal Smart Buttons.");
             });
         };
 
-        if (existingScript && window.paypal) {
-          renderButtons();
+        if (existingScript) {
+          if (window.paypal) {
+            renderButtons();
+          } else {
+            existingScript.addEventListener("load", renderButtons);
+          }
           return;
         }
 
@@ -125,15 +145,18 @@ export const PayPalSmartButtons: React.FC<PayPalSmartButtonsProps> = ({
 
     return () => {
       cancelled = true;
+      if (buttonsInstance && typeof buttonsInstance.close === "function") {
+        buttonsInstance.close().catch(() => {});
+      }
     };
-  }, [contractId, paypalCurrency, onAuthorized, onError]);
+  }, [contractId, paypalCurrency]);
 
   return (
     <div className="space-y-2">
       {statusMsg && (
         <p className="text-[11px] text-center text-gray-500 animate-pulse">{statusMsg}</p>
       )}
-      <div ref={containerRef} className={sdkReady ? "min-h-[48px]" : "hidden"} />
+      <div ref={containerRef} className="min-h-[48px] w-full" />
     </div>
   );
 };

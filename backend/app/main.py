@@ -36,13 +36,15 @@ from app.api.application_routes import (
 from app.api.user_routes import router as user_router
 from app.api.auth_routes import router as auth_router
 from app.api.paypal_routes import router as paypal_router
+from app.api.dispute_notification_routes import disputes_router, notifications_router
+from app.api.integrations_routes import router as integrations_router
 from app.database import engine, Base
 from app.core.security import validate_jwt_configuration, is_production_environment
 
 logger = logging.getLogger("trustpay.main")
 
 # Import all models so Base.metadata knows about every table before create_all() runs.
-from app.models import User, Project, Application, Contract, Milestone, Submission, PayPalTransaction, ContractMessage  # noqa: F401
+from app.models import User, Project, Application, Contract, Milestone, Submission, PayPalTransaction, ContractMessage, Dispute, Notification  # noqa: F401
 
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -78,8 +80,23 @@ async def lifespan(app: FastAPI):
         from sqlalchemy import text
         with engine.begin() as conn:
             cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()}
-            if "paypal_payout_email" not in cols:
-                conn.execute(text("ALTER TABLE users ADD COLUMN paypal_payout_email VARCHAR(255)"))
+            user_migrations = {
+                "paypal_payout_email": "VARCHAR(255)",
+                "city": "VARCHAR(120)",
+                "state": "VARCHAR(120)",
+                "country": "VARCHAR(120)",
+                "address": "TEXT",
+                "postal_code": "VARCHAR(40)",
+                "skills": "JSON",
+                "experience_years": "INTEGER",
+                "education": "JSON",
+            }
+            for col_name, col_type in user_migrations.items():
+                if col_name not in cols:
+                    conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
+            app_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(applications)")).fetchall()}
+            if "freelancer_profile" not in app_cols:
+                conn.execute(text("ALTER TABLE applications ADD COLUMN freelancer_profile JSON"))
     except Exception as mig_err:
         logger.warning(f"Non-blocking SQLite column check: {mig_err}")
 
@@ -104,6 +121,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*", "X-Requested-With", "X-CSRF-Token"],
@@ -167,6 +185,9 @@ app.include_router(applications_direct_router)
 app.include_router(user_router)
 app.include_router(auth_router)
 app.include_router(paypal_router)
+app.include_router(integrations_router)
+app.include_router(disputes_router)
+app.include_router(notifications_router)
 
 
 @app.get("/")
